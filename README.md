@@ -50,6 +50,7 @@ Design notes from the Screen Studio teardown live in `~/screenstudio-re/BLUEPRIN
 - Full display, a single window, or a dragged area
 - System audio and mic on separate lanes
 - Webcam bubble you can drag while recording
+- Camera layout per clip, changed mid-clip with keyframes
 - Floating stop pill (left out of the recording)
 - **⌘⇧1 take again**: cuts the sentence you just said
 - Opt-in typing detection (key-press times only)
@@ -82,6 +83,7 @@ Design notes from the Screen Studio teardown live in `~/screenstudio-re/BLUEPRIN
 
 ### 📦 Publish
 - On-device captions (Apple Speech) with a subtitle editor and glossary
+- One caption style for all lines (font, colours, background, size, width), kept when regenerating
 - Privacy auto-blur for emails, phone numbers, tokens, names and faces
 - Content package: titles, chapters, YouTube description, LinkedIn post, newsletter snippet
 - Thumbnail generator (YouTube / LinkedIn / square)
@@ -193,7 +195,7 @@ background segmentation run on-device with Apple frameworks.
 |---|---|---|
 | Model | `Model/` | project folder = `recording.json` (immutable raw data) + `project.json` (clips, texts, settings) + media; added clips are copied into `clips/` (recordings) and `media/` (video files) |
 | Timeline | `Model/TimelineLayout.swift` | shared by editor and composer: clip speed stretches a clip (pitch kept, `.spectral`), a transition overlaps it with the next |
-| Camera lane | `Model/EditSettings.swift` (`CameraKey`), `Render/RenderModel.swift` | timeline keyframes: from each one the bubble glides (0.5 s) to a position and/or switches overlay / fullscreen / hidden (0.35 s fade); dragging the bubble on the preview sets the keyframe at the playhead |
+| Camera lane | `Model/EditSettings.swift` (`CameraKey`), `Render/RenderModel.swift` | timeline keyframes: from each one the bubble glides (0.5 s) to a position and/or switches overlay / fullscreen / hidden (0.35 s fade); dragging the bubble on the preview sets the keyframe at the playhead. Positions carry across clips, layouts don't: each clip starts in its own layout and its keyframes change it mid-clip ("Change Camera at Playhead" in the clip's right-click menu) |
 | Undo | `Editor/EditorModel.swift` | snapshot stack of settings/clips/texts; changes within 0.6 s coalesce (drags, sliders) |
 | Activity strip | `Editor/EditorModel.swift` (`begin/report/end`), `ActivityStrip` | every long task registers by id: shown with progress and elapsed time on the preview, a second start is refused with a notice, transcription is shared between features |
 
@@ -227,17 +229,18 @@ background segmentation run on-device with Apple frameworks.
 | Edit by prompt | `Analysis/AIClient.swift`, `Analysis/AIEditor.swift` | Claude via the newest local Claude Code binary (`-p --output-format json --tools ""`, so the user's own auth/Bedrock); project + transcript as JSON in, a whitelisted operation list out, applied as one undo step |
 | Social | `Editor/EditorModel+AI.swift` | 9:16/1:1 "fill frame & follow cursor"; "Make Short" lets Claude pick 30–60 s from the transcript and builds a vertical copy with a hook title |
 | Script editing | `Editor/PublishViews.swift` (`TranscriptPanel`) | on-device transcript as clickable words; shift-click selects, ⌫ cuts the words from the video (`EditOps.remove`) |
-| Subtitles | `Editor/SubtitleEditor.swift`, `Model/Glossary.swift` | own window: every line editable and playable, find & replace across all, one style for all; glossary (app-wide) gives the recognizer vocabulary hints and fixes every transcript (phrase-level, after splitting multi-word segments); "Fix with Claude" proofreads names/spelling/punctuation without rewording, marks changes, and can teach the glossary what it corrected |
+| Subtitles | `Editor/SubtitleEditor.swift`, `Model/Glossary.swift` | own window: every line editable and playable, find & replace across all; glossary (app-wide) gives the recognizer vocabulary hints and fixes every transcript (phrase-level, after splitting multi-word segments); "Fix with Claude" proofreads names/spelling/punctuation without rewording, marks changes, and can teach the glossary what it corrected |
+| Caption style | `Model/EditSettings.swift` (`CaptionStyle`), `Editor/EditorModel+Subtitles.swift` | one look for all subtitles (style, position, size, width, font, text and background colour), saved in the project so generated captions get it; changing one property keeps per-line tweaks of the others; "Use This Style for All Subtitles" copies one line's look; brand kits set its font |
 | Content package | `Analysis/ContentPackager.swift` | Claude writes titles, chapters, YouTube description, LinkedIn post and newsletter snippet (LinkedIn/newsletter in the jens-voice style) → `content/` with content.md, chapters.txt, captions.srt |
 | Thumbnails | `Analysis/ThumbnailMaker.swift` | frame candidates scored by face + detail, headline by Claude, face cut-out (person segmentation around the largest face), brand logo → YouTube / LinkedIn / square PNGs in `thumbnails/` |
 | Step guide | `Analysis/GuideMaker.swift` | one step per click: screenshot with marker, clicked label via OCR, text by Claude → `guide/` index.html, guide.md, guide.pdf |
 
 </details>
 
-## 🗺 Not yet
+## 🗺 Roadmap
 
-- [ ] Camera layouts that change mid-clip (split the clip instead for now)
-- [ ] Caption styling for all captions at once
+- [x] Camera layouts that change mid-clip
+- [x] Caption styling for all captions at once
 - ~~GIF export~~ (not wanted)
 
 ---

@@ -70,6 +70,9 @@ extension EditorModel {
             s.customGradient = kit.gradient
             s.watermark = kit.logoPath.map { Watermark(path: $0, corner: kit.logoCorner, size: kit.logoSize, opacity: 0.9) }
             let font = kit.fontPostScriptName
+            var captionStyle = self.captionStyle
+            captionStyle.fontName = font
+            s.captionStyle = captionStyle
 
             var newTexts = texts.filter { $0.brand != true }
             for i in newTexts.indices {

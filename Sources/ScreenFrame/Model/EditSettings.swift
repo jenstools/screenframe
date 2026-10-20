@@ -140,6 +140,10 @@ struct EditSettings: Codable, Equatable {
     /// Speed used by "Speed up typing".
     var typingSpeed = 3.0
 
+    /// The look of all subtitles, set in the subtitle editor. Nil until it's first set (older
+    /// projects then take it from their first caption).
+    var captionStyle: CaptionStyle?
+
     func volume(for kind: String) -> Float {
         muted.contains(kind) ? 0 : Float(volumes[kind] ?? 1)
     }
@@ -181,6 +185,61 @@ struct EditSettings: Codable, Equatable {
         customGradient = try c.decodeIfPresent([UInt32].self, forKey: .customGradient)
         watermark = try? c.decodeIfPresent(Watermark.self, forKey: .watermark)
         typingSpeed = try c.decodeIfPresent(Double.self, forKey: .typingSpeed) ?? d.typingSpeed
+        captionStyle = try? c.decodeIfPresent(CaptionStyle.self, forKey: .captionStyle)
+    }
+}
+
+/// One look for every subtitle. Generated captions get it, so regenerating keeps the style.
+struct CaptionStyle: Codable, Equatable {
+    var size = 0.042
+    /// Vertical centre, normalized to the output frame, top-left origin.
+    var y = 0.9
+    var style = TextOverlay.Style.pill
+    var color: UInt32 = 0xFFFFFF
+    /// Nil = system bold.
+    var fontName: String?
+    /// Nil = automatic dark/light.
+    var pillColor: UInt32?
+    /// Nil = 88% of the frame.
+    var wrapWidth: Double?
+
+    init() {}
+
+    init(_ text: TextOverlay) {
+        size = text.size
+        y = text.y
+        style = text.style
+        color = text.color
+        fontName = text.fontName
+        pillColor = text.pillColor
+        wrapWidth = text.wrapWidth
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = CaptionStyle()
+        size = try c.decodeIfPresent(Double.self, forKey: .size) ?? d.size
+        y = try c.decodeIfPresent(Double.self, forKey: .y) ?? d.y
+        style = (try? c.decodeIfPresent(TextOverlay.Style.self, forKey: .style)) ?? d.style
+        color = try c.decodeIfPresent(UInt32.self, forKey: .color) ?? d.color
+        fontName = try c.decodeIfPresent(String.self, forKey: .fontName)
+        pillColor = try c.decodeIfPresent(UInt32.self, forKey: .pillColor)
+        wrapWidth = try c.decodeIfPresent(Double.self, forKey: .wrapWidth)
+    }
+
+    /// Gives a subtitle this look. With `old`, only what differs from it is applied, so changing
+    /// one property for all keeps per-line tweaks of the others.
+    func apply(to text: inout TextOverlay, changedFrom old: CaptionStyle? = nil) {
+        func changed<T: Equatable>(_ path: KeyPath<CaptionStyle, T>) -> Bool {
+            old.map { $0[keyPath: path] != self[keyPath: path] } ?? true
+        }
+        if changed(\.size) { text.size = size }
+        if changed(\.y) { text.y = y }
+        if changed(\.style) { text.style = style }
+        if changed(\.color) { text.color = color }
+        if changed(\.fontName) { text.fontName = fontName }
+        if changed(\.pillColor) { text.pillColor = pillColor }
+        if changed(\.wrapWidth) { text.wrapWidth = wrapWidth }
     }
 }
 

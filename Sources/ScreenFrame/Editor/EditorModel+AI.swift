@@ -10,9 +10,10 @@ extension EditorModel {
         return cameraKeys.first { $0.id == id }
     }
 
-    /// Layout in effect at the playhead (from the keyframes, else the clip).
+    /// Layout in effect at the playhead (from the clip's keyframes, else the clip).
     var currentCameraLayout: Clip.CameraLayout {
-        cameraKeys.filter { $0.t <= currentTime }.max(by: { $0.t < $1.t })?.layout ?? placement(at: currentTime)?.clip.camera ?? .overlay
+        guard let p = placement(at: currentTime) else { return .overlay }
+        return cameraKeys.filter { $0.t <= currentTime && $0.t >= p.offset }.max(by: { $0.t < $1.t })?.layout ?? p.clip.camera
     }
 
     /// Bubble centre at the playhead, normalized to the output (top-left origin).
@@ -27,7 +28,7 @@ extension EditorModel {
         guard let p = placement(at: currentTime), p.media.info.webcam != nil else { return nil }
         let videoRect = RenderModel.videoRect(canvas: canvasSize, source: p.media.sourceSize, settings: settings)
         return RenderModel.CameraPlacement(settings: settings, info: p.media.info, canvas: canvasSize, videoRect: videoRect,
-                                           keys: cameraKeys, baseLayout: p.clip.camera)
+                                           keys: cameraKeys, baseLayout: p.clip.camera, clipStart: p.offset)
             .state(source: p.sourceTime(currentTime), timeline: currentTime).rect
     }
 

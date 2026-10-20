@@ -291,6 +291,12 @@ struct TimelineView: View {
             Picker("Camera", selection: Binding(get: { p.clip.camera }, set: { model.setCameraLayout(id, $0) })) {
                 ForEach(Clip.CameraLayout.allCases) { Text($0.label).tag($0) }
             }
+            Menu("Change Camera at Playhead") {
+                ForEach(Clip.CameraLayout.allCases) { layout in
+                    Button(layout.label) { model.addCameraKey(layout: layout) }
+                }
+            }
+            .disabled(model.currentTime < p.offset || model.currentTime >= p.end)
         }
         if p.index < model.clips.count - 1 {
             Picker("Transition to Next", selection: Binding(get: { p.clip.transition?.kind }, set: { model.setTransition(id, $0) })) {
@@ -427,9 +433,10 @@ struct TimelineView: View {
     private func cameraLane(scale: CGFloat) -> some View {
         let keys = model.cameraKeys.sorted { $0.t < $1.t }
         return ZStack(alignment: .topLeading) {
-            // Bars show the layout in effect between keyframes.
+            // Bars show the layout in effect between keyframes; at the next clip its own layout takes over.
             ForEach(Array(keys.enumerated()), id: \.element.id) { i, key in
-                let end = i + 1 < keys.count ? keys[i + 1].t : model.totalDuration
+                let end = min(i + 1 < keys.count ? keys[i + 1].t : model.totalDuration,
+                              model.placement(at: key.t)?.end ?? model.totalDuration)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Self.layoutColor(key.layout ?? .overlay).opacity(0.45))
                     .frame(width: max(2, (end - key.t) * scale), height: 6)

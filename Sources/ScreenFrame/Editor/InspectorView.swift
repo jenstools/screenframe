@@ -652,6 +652,11 @@ private struct TextPanel: View {
                     Label("Edit & Correct All Subtitles…", systemImage: "text.badge.checkmark").frame(maxWidth: .infinity)
                 }
                 .controlSize(.small)
+                Button { model.applyCaptionStyle(from: text.id) } label: {
+                    Label("Use This Style for All Subtitles", systemImage: "paintbrush").frame(maxWidth: .infinity)
+                }
+                .controlSize(.small)
+                .help("Size, position, style, colours and font of this line for every subtitle, including regenerated ones")
             }
             TextEditor(text: Binding(get: { text.text }, set: { v in model.updateText(text.id) { $0.text = v } }))
                 .font(.body)

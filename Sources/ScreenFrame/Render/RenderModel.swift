@@ -53,7 +53,9 @@ final class RenderModel: @unchecked Sendable {
     /// Where the camera bubble is at any moment, and how visible each layout is. Camera-lane
     /// keyframes win; without them the bubble follows the path it was dragged along while
     /// recording (spring-smoothed) or sits at a fixed spot (dragged in the editor, or a corner).
-    /// Shared with the editor, which hit-tests the bubble for dragging.
+    /// Positions carry across clips; layouts don't: each clip starts in its own layout and
+    /// keyframes inside it change that mid-clip. Shared with the editor, which hit-tests the
+    /// bubble for dragging.
     struct CameraPlacement {
         let size: CGSize
         let canvas: CGSize
@@ -62,18 +64,21 @@ final class RenderModel: @unchecked Sendable {
         let path: Track?
         let keys: [CameraKey]
         let baseLayout: Clip.CameraLayout
+        /// Timeline time the clip starts; layout keys before it belong to earlier clips.
+        let clipStart: Double
 
         static let moveDuration = 0.5
         static let layoutFade = 0.35
 
         init(settings: EditSettings, info: RecordingInfo, canvas: CGSize, videoRect: CGRect,
-             keys: [CameraKey] = [], baseLayout: Clip.CameraLayout = .overlay) {
+             keys: [CameraKey] = [], baseLayout: Clip.CameraLayout = .overlay, clipStart: Double = -.infinity) {
             let unit = min(canvas.width, canvas.height) / 1080
             let height = (settings.cameraSize * canvas.height).rounded()
             size = CGSize(width: (height * settings.cameraShape.aspect).rounded(), height: height)
             self.canvas = canvas
             self.keys = keys.sorted { $0.t < $1.t }
             self.baseLayout = baseLayout
+            self.clipStart = clipStart
             margin = 20 * unit
             if let x = settings.cameraX, let y = settings.cameraY {
                 fixedCenter = CGPoint(x: x * canvas.width, y: (1 - y) * canvas.height)
@@ -131,11 +136,14 @@ final class RenderModel: @unchecked Sendable {
                 let e = p * p * (3 - 2 * p)
                 let to = keyCenter(key)
                 center = CGPoint(x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e)
-                let a = weight(index > 0 ? keys[index - 1].layout ?? .overlay : baseLayout)
-                let b = weight(key.layout ?? .overlay)
-                let m = min(1, (time - key.t) / Self.layoutFade)
-                overlay = a.0 + (b.0 - a.0) * m
-                fullscreen = a.1 + (b.1 - a.1) * m
+                if key.t >= clipStart {
+                    let previous = index > 0 && keys[index - 1].t >= clipStart ? keys[index - 1].layout ?? .overlay : baseLayout
+                    let a = weight(previous)
+                    let b = weight(key.layout ?? .overlay)
+                    let m = min(1, (time - key.t) / Self.layoutFade)
+                    overlay = a.0 + (b.0 - a.0) * m
+                    fullscreen = a.1 + (b.1 - a.1) * m
+                }
             }
             let x = min(max(center.x - size.width / 2, margin), canvas.width - margin - size.width)
             let y = min(max(center.y - size.height / 2, margin), canvas.height - margin - size.height)
@@ -188,7 +196,8 @@ final class RenderModel: @unchecked Sendable {
         self.unit = unit
         self.bubble = info.webcam == nil ? nil : Self.makeBubble(
             CameraPlacement(settings: settings, info: info, canvas: canvas, videoRect: videoRect,
-                            keys: settings.showCamera ? cameraKeys : [], baseLayout: settings.showCamera ? clip.camera : .hidden),
+                            keys: settings.showCamera ? cameraKeys : [], baseLayout: settings.showCamera ? clip.camera : .hidden,
+                            clipStart: clipOffset),
             settings: settings, unit: unit)
 
         let pointToCanvas = info.pointScale * videoRect.width / source.width

@@ -167,14 +167,33 @@ extension EditorModel {
     }
 
     /// One look for every subtitle.
-    func styleAllCaptions(size: Double? = nil, y: Double? = nil, style: TextOverlay.Style? = nil, color: UInt32? = nil) {
+    /// The look for all subtitles: the saved one, else the first caption's (older projects), else
+    /// the default.
+    var captionStyle: CaptionStyle {
+        settings.captionStyle ?? sortedCaptions.first.map(CaptionStyle.init) ?? CaptionStyle()
+    }
+
+    /// Changes the look of every subtitle and remembers it for generated ones. Only the changed
+    /// properties are applied, so per-line tweaks of the others stay.
+    func styleAllCaptions(_ change: (inout CaptionStyle) -> Void) {
+        let old = captionStyle
+        var style = old
+        change(&style)
+        guard style != old || settings.captionStyle == nil else { return }
+        settings.captionStyle = style
         var updated = texts
-        for i in updated.indices where updated[i].caption {
-            if let size { updated[i].size = size }
-            if let y { updated[i].y = y }
-            if let style { updated[i].style = style }
-            if let color { updated[i].color = color }
-        }
+        for i in updated.indices where updated[i].caption { style.apply(to: &updated[i], changedFrom: old) }
         texts = updated
+    }
+
+    /// Gives every subtitle the complete look of one of them.
+    func applyCaptionStyle(from id: UUID) {
+        guard let line = texts.first(where: { $0.id == id }) else { return }
+        let style = CaptionStyle(line)
+        settings.captionStyle = style
+        var updated = texts
+        for i in updated.indices where updated[i].caption { style.apply(to: &updated[i]) }
+        texts = updated
+        show("Style applied to \(captions.count) subtitles")
     }
 }

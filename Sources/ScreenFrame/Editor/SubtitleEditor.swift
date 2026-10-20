@@ -112,52 +112,103 @@ struct SubtitleEditorView: View {
     // MARK: Style for all
 
     private var styleBar: some View {
-        let first = model.sortedCaptions.first
-        return HStack(spacing: 12) {
-            Text("All subtitles:").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Picker("Style", selection: Binding(get: { first?.style ?? .pill }, set: { model.styleAllCaptions(style: $0) })) {
-                ForEach(TextOverlay.Style.allCases) { Text($0.label).tag($0) }
+        let current = model.captionStyle
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text("All subtitles:").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Picker("Style", selection: Binding(get: { current.style }, set: { v in model.styleAllCaptions { $0.style = v } })) {
+                    ForEach(TextOverlay.Style.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 190)
+                Picker("Position", selection: Binding(get: { current.y < 0.5 ? 0.1 : 0.9 }, set: { v in model.styleAllCaptions { $0.y = v } })) {
+                    Text("Bottom").tag(0.9)
+                    Text("Top").tag(0.1)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 130)
+                HStack(spacing: 4) {
+                    Text("Size").font(.caption)
+                    Slider(value: Binding(get: { current.size }, set: { v in model.styleAllCaptions { $0.size = v } }), in: 0.025...0.08)
+                        .frame(width: 110)
+                }
+                HStack(spacing: 4) {
+                    Text("Width").font(.caption)
+                    Slider(value: Binding(get: { current.wrapWidth ?? 0.88 }, set: { v in model.styleAllCaptions { $0.wrapWidth = v } }),
+                           in: 0.4...0.95)
+                        .frame(width: 90)
+                }
+                Spacer()
             }
-            .pickerStyle(.segmented)
-            .frame(width: 190)
-            Picker("Position", selection: Binding(get: { (first?.y ?? 0.9) < 0.5 ? 0.1 : 0.9 }, set: { model.styleAllCaptions(y: $0) })) {
-                Text("Bottom").tag(0.9)
-                Text("Top").tag(0.1)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 130)
-            HStack(spacing: 4) {
-                Text("Size").font(.caption)
-                Slider(value: Binding(get: { first?.size ?? 0.042 }, set: { model.styleAllCaptions(size: $0) }), in: 0.025...0.08)
-                    .frame(width: 110)
-            }
-            HStack(spacing: 4) {
-                ForEach([UInt32(0xFFFFFF), 0xFFD60A, 0x71D4A9, 0x1C1C1E], id: \.self) { color in
-                    Button { model.styleAllCaptions(color: color) } label: {
-                        Circle().fill(Color(hex: color)).frame(width: 16, height: 16)
-                            .overlay(Circle().strokeBorder(first?.color == color ? Color.accentColor : Color.primary.opacity(0.25),
-                                                           lineWidth: first?.color == color ? 2.5 : 1))
+            HStack(spacing: 12) {
+                Picker("Font", selection: Binding(get: { current.fontName }, set: { v in model.styleAllCaptions { $0.fontName = v } })) {
+                    Text("System").tag(String?.none)
+                    ForEach(fonts(including: current.fontName), id: \.name) { Text($0.label).tag(Optional($0.name)) }
+                }
+                .frame(width: 210)
+                HStack(spacing: 4) {
+                    Text("Text").font(.caption)
+                    ForEach(Self.textColors, id: \.self) { color in
+                        swatch(color, selected: current.color == color) { model.styleAllCaptions { $0.color = color } }
+                    }
+                }
+                HStack(spacing: 4) {
+                    Text("Background").font(.caption)
+                    Button { model.styleAllCaptions { $0.pillColor = nil } } label: {
+                        Text("Auto").font(.caption2)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .overlay(Capsule().strokeBorder(current.pillColor == nil ? Color.accentColor : Color.primary.opacity(0.25),
+                                                            lineWidth: current.pillColor == nil ? 2 : 1))
                     }
                     .buttonStyle(.plain)
-                }
-            }
-            Spacer()
-            if !model.recentlyFixed.isEmpty {
-                Toggle("Only Claude's changes (\(model.recentlyFixed.count))", isOn: $onlyFixed).toggleStyle(.checkbox)
-                let learnable = model.learnableFixes
-                if !learnable.isEmpty {
-                    Button {
-                        model.learnFromFixes()
-                    } label: {
-                        Label("Learn \(learnable.count) for next time", systemImage: "graduationcap")
+                    ForEach(Self.pillColors, id: \.self) { color in
+                        swatch(color, selected: current.pillColor == color) { model.styleAllCaptions { $0.pillColor = color } }
                     }
-                    .help(learnable.map { "\($0.heard) → \($0.term)" }.joined(separator: "\n"))
+                }
+                .disabled(current.style != .pill)
+                .opacity(current.style == .pill ? 1 : 0.4)
+                .help("Background of the pill style")
+                Spacer()
+                if !model.recentlyFixed.isEmpty {
+                    Toggle("Only Claude's changes (\(model.recentlyFixed.count))", isOn: $onlyFixed).toggleStyle(.checkbox)
+                    let learnable = model.learnableFixes
+                    if !learnable.isEmpty {
+                        Button {
+                            model.learnFromFixes()
+                        } label: {
+                            Label("Learn \(learnable.count) for next time", systemImage: "graduationcap")
+                        }
+                        .help(learnable.map { "\($0.heard) → \($0.term)" }.joined(separator: "\n"))
+                    }
                 }
             }
         }
         .controlSize(.small)
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
+    }
+
+    private static let textColors: [UInt32] = [0xFFFFFF, 0xFFD60A, 0x71D4A9, 0x1C1C1E]
+    private static let pillColors: [UInt32] = [0x1C1C1E, 0xFFFFFF, 0x7F5AF0, 0x2CB1BC, 0xFF453A]
+
+    private func swatch(_ color: UInt32, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Circle().fill(Color(hex: color)).frame(width: 16, height: 16)
+                .overlay(Circle().strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.25), lineWidth: selected ? 2.5 : 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Brand kit fonts first, then a few installed bold faces; the current font is always listed.
+    private func fonts(including current: String?) -> [(name: String, label: String)] {
+        var names = model.brandKits.map(\.fontPostScriptName)
+        names += ["AvenirNext-Bold", "HelveticaNeue-Bold", "Futura-Bold", "GillSans-Bold", "Georgia-Bold", "Menlo-Bold"]
+        if let current { names.insert(current, at: 0) }
+        var seen = Set<String>()
+        return names.compactMap { name in
+            guard seen.insert(name).inserted, let font = NSFont(name: name, size: 12) else { return nil }
+            return (name, font.displayName ?? name)
+        }
     }
 
     // MARK: Lines

@@ -697,7 +697,7 @@ final class EditorModel: ObservableObject {
         guard settings.showCamera, let p = placement(at: currentTime), p.media.info.webcam != nil else { return nil }
         let videoRect = RenderModel.videoRect(canvas: canvasSize, source: p.media.sourceSize, settings: settings)
         let placement = RenderModel.CameraPlacement(settings: settings, info: p.media.info, canvas: canvasSize, videoRect: videoRect,
-                                                    keys: cameraKeys, baseLayout: p.clip.camera)
+                                                    keys: cameraKeys, baseLayout: p.clip.camera, clipStart: p.offset)
         let state = placement.state(source: p.sourceTime(currentTime), timeline: currentTime)
         return state.overlay > 0.5 ? state.rect : nil
     }
@@ -751,6 +751,7 @@ final class EditorModel: ObservableObject {
         guard begin("captions", "Creating captions…") else { return }
         let placements = self.placements
         let language = captionLanguage
+        let style = captionStyle
         Task {
             var wordsByFile = self.wordsByFile
             var captions: [TextOverlay] = []
@@ -778,8 +779,9 @@ final class EditorModel: ObservableObject {
                         return Captioner.Word(text: w.text, start: p.timelineTime(s0), end: min(p.end, p.timelineTime(s1)))
                     }
                     captions += Captioner.lines(from: inClip).map {
-                        TextOverlay(text: $0.text, start: $0.start, end: $0.end, x: 0.5, y: 0.9, size: 0.042,
-                                    color: 0xFFFFFF, style: .pill, isCaption: true)
+                        var line = TextOverlay(text: $0.text, start: $0.start, end: $0.end, x: 0.5, isCaption: true)
+                        style.apply(to: &line)
+                        return line
                     }
                 }
                 texts = texts.filter { !$0.caption } + captions
