@@ -1,26 +1,111 @@
 <div align="center">
 
-<img src="docs/icon.png" width="128" alt="ScreenFrame icon">
+<img src="docs/icon.png" width="140" alt="ScreenFrame icon">
 
 # ScreenFrame
 
-**Record raw. Polish later.**
+### Record raw. Polish later.
 
-A native macOS screen recorder in the spirit of Screen Studio: auto zooms, a smooth cursor and
-studio backgrounds, plus an AI editor that cleans up, cuts and packages your video for you.
+A native macOS screen recorder with auto zooms, a buttery cursor and studio backgrounds,<br>
+plus an AI editor that cleans up, cuts, subtitles and turns one video into a week of content.
+
+<br>
 
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white)
 ![SwiftPM](https://img.shields.io/badge/SwiftPM-no%20Xcode-0A84FF)
-![ScreenCaptureKit](https://img.shields.io/badge/ScreenCaptureKit-HEVC-34C759)
+![ScreenCaptureKit](https://img.shields.io/badge/ScreenCaptureKit-60%20fps%20HEVC-34C759)
 ![Claude](https://img.shields.io/badge/AI-Claude-D97757)
+![On-device](https://img.shields.io/badge/speech%20%C2%B7%20vision-on--device-5E5CE6)
 ![Version](https://img.shields.io/badge/version-0.1.0-8E8E93)
 
-[Quick start](#quick-start) · [Features](#features) · [Shortcuts](#shortcuts) · [CLI](#cli) · [Architecture](#architecture)
+<br>
+
+**[Quick start](#quick-start)** &nbsp;·&nbsp; **[Highlights](#highlights)** &nbsp;·&nbsp; **[Features](#features)** &nbsp;·&nbsp; **[Shortcuts](#shortcuts)** &nbsp;·&nbsp; **[CLI](#cli)** &nbsp;·&nbsp; **[Architecture](#architecture)**
 
 </div>
 
+<br>
+
 ---
+
+<a id="highlights"></a>
+
+## ⚡ Highlights
+
+<table>
+<tr>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>🔍</h3>
+<b>Auto zoom</b><br>
+<sub>Zooms in where you click and follows the cursor, with springs tuned like Screen Studio</sub>
+<br><br>
+</td>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>🤖</h3>
+<b>Edit by prompt</b><br>
+<sub>"Cut the intro, zoom on the settings, add a title." Claude does it as one undo step</sub>
+<br><br>
+</td>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>✂️</h3>
+<b>Edit by script</b><br>
+<sub>Delete words from the transcript and they're gone from the video</sub>
+<br><br>
+</td>
+</tr>
+<tr>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>📱</h3>
+<b>1–8 Shorts per video</b><br>
+<sub>Claude finds the moments that stand on their own and builds 9:16 shorts with captions and a hook</sub>
+<br><br>
+</td>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>↺</h3>
+<b>Take again</b><br>
+<sub>Fluffed a sentence? Press ⌘⇧1, say it again. The bad take is cut for you</sub>
+<br><br>
+</td>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>🛡</h3>
+<b>Privacy auto-blur</b><br>
+<sub>Emails, phone numbers, API keys, names and faces found and blurred on-device</sub>
+<br><br>
+</td>
+</tr>
+<tr>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>💬</h3>
+<b>Subtitles that learn</b><br>
+<sub>On-device speech, a glossary for your names, and Claude proofreading that teaches it</sub>
+<br><br>
+</td>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>📦</h3>
+<b>Content package</b><br>
+<sub>Titles, chapters, YouTube description, LinkedIn post, newsletter snippet, thumbnails</sub>
+<br><br>
+</td>
+<td width="33%" valign="top" align="center">
+<br>
+<h3>🎨</h3>
+<b>Brand kits</b><br>
+<sub>Your fonts, colours, gradient, logo, lower third, intro and outro in one click</sub>
+<br><br>
+</td>
+</tr>
+</table>
+
+<br>
 
 <a id="quick-start"></a>
 
@@ -36,77 +121,133 @@ studio backgrounds, plus an AI editor that cleans up, cuts and packages your vid
 > Recording*, then press **Relaunch**. Builds are signed with the local "Flow App Signing" identity, so
 > the grant survives rebuilds.
 
+No Xcode project, no API key. AI features run through your local Claude Code login.
+
 Design notes from the Screen Studio teardown live in `~/screenstudio-re/BLUEPRINT.md`.
+
+<br>
+
+---
 
 <a id="features"></a>
 
-## ✨ Features
+# ✨ Features
 
-<table>
-<tr>
-<td width="50%" valign="top">
+<br>
 
-### 🎥 Capture
-- Full display, a single window, or a dragged area
-- System audio and mic on separate lanes
-- Webcam bubble you can drag while recording
-- Camera layout per clip, changed mid-clip with keyframes
-- Floating stop pill (left out of the recording)
-- **⌘⇧1 take again**: cuts the sentence you just said
-- Opt-in typing detection (key-press times only)
+## 🎥 Capture
 
-</td>
-<td width="50%" valign="top">
+*Hit ⌘⇧2 and talk. Everything else can be fixed later.*
 
-### 🎬 Polish
-- Auto zoom on clicks, following the cursor or locked to a focus point
-- Spring-smoothed cursor, click squish and ripple
-- Backgrounds, shadows, rounded corners, motion blur
-- Multi-clip timeline: split, trim, reorder, speed, volume
-- Crossfade, fade-through-black and slide transitions
-- Text overlays, brand kits, intro/outro cards
+- **Record anything:** a full display, a single window, or an area you drag out
+- **60 fps HEVC** via ScreenCaptureKit. The system cursor is hidden and redrawn later, so it can be smoothed, scaled or hidden
+- **3‑2‑1 countdown** on the display you're recording, never captured itself
+- **Live mic meter** before you start, so a muted or wrong mic shows up before you waste a take
+- **Separate audio lanes** for your mic and system audio, each with its own volume
+- **Webcam bubble** you can drag around while recording. Its path is replayed spring-smoothed in the edit
+- **Floating stop pill** with a timer, left out of the recording. The mouse move to Stop is trimmed off automatically
+- **↺ Take again (⌘⇧1):** mark a retake, say the sentence again, and on stop the last sentence before each mark is cut
+- **Typing detection** (opt-in, records key-press *times* only) for "speed up typing" in the edit
+- **Menu-bar icon** to stop from anywhere
+- **Bring your own footage:** import `.screenstudio` projects, or drop any video files on the home window to start a project
 
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
+<br>
 
-### 🤖 AI editor
-- **Edit by prompt:** describe the change, Claude applies it as one undo step
-- **Edit by script:** delete words from the transcript to cut the video
-- Pause and filler-word cleanup
-- **Make Shorts:** Claude picks several moments that work on their own and builds each as a 9:16 short
-- Face-centred camera, background blur or removal
+## 🎬 Polish
 
-</td>
-<td width="50%" valign="top">
+*The Screen Studio look without touching a keyframe.*
 
-### 📱 Social
-- **Social tab:** make 1–8 YouTube Shorts per video (15–30 s, 30–60 s or 1–3 min); new ones skip moments you already have
-- Each short is a full project: edit cuts, captions, titles and camera like any video
-- Layouts: **Split** (screen on top, you below), bubble, camera only, screen only
-- **Styles:** Clean, Bold, Minimal, Pop, one per brand kit (your CI: font, colours, gradient, logo) and your own saved presets
-  - Captions: pill / outline / shadow / plain, font, text and box colours, size, UPPERCASE, position
-  - Hook title: text, style, colours, size, how long it shows
-  - Progress bar (solid or brand gradient, top or bottom), split ratio and divider line, logo, background, frame
-  - Pick one for new shorts, fine-tune it per short, or give all shorts of a video one style
-- Title, description and hashtags per short, editable in the original's list or the short's own window
-- Export one or all: `Movies/<video> – Shorts/NN Title.mp4` + `.txt` with the post text
+- **Auto zoom on clicks:** nearby clicks are grouped into one zoom that starts just before you act
+- **Follow cursor or fixed point:** each zoom follows the mouse, or you drag a frame over a still to pick exactly what it shows
+- **Spring-smoothed cursor** with adjustable size, click squish and ripple highlight, or hide it completely
+- **Studio backgrounds:** Aurora, Sunset, Ocean, Candy, Forest, Peach, Lime, Midnight, Graphite, Paper, or your own wallpaper
+- **Padding, rounded corners, drop shadow and motion blur**
+- **Any aspect:** source, 16:9, 1:1, 9:16, 4:3, with *fill frame & follow cursor* to reframe a wide recording for vertical
+- **Export in 1080p, 4K or native resolution**
 
-### 📦 Publish
-- Export writes three files in sync: the final video, the screen alone, and the camera full frame
-- On-device captions (Apple Speech) with a subtitle editor and glossary
-- One caption style for all lines (font, colours, background, size, width), kept when regenerating
-- Privacy auto-blur for emails, phone numbers, tokens, names and faces
-- Content package: titles, chapters, YouTube description, LinkedIn post, newsletter snippet
-- Thumbnail generator (YouTube / LinkedIn / square)
-- Step-by-step guide as HTML, Markdown and PDF
+<br>
 
-</td>
-</tr>
-</table>
+## 🎞 Timeline
 
-Existing `.screenstudio` projects can be imported, and any video file can be opened as a project.
+*A real multi-clip editor, not just a trimmer.*
+
+- **Multi-clip:** add more recordings or video files, then split, trim, reorder and duplicate
+- **Speed per clip** (pitch kept) and **volume per clip and per lane**, with waveforms on the timeline
+- **Transitions:** crossfade, fade through black, slide
+- **Text overlays:** pill, outline, shadow or plain, UPPERCASE, dragged right on the preview, with a soft fade-and-rise
+- **Camera lane with keyframes:** the bubble glides to a new spot or switches layout mid-clip
+- **Right-click everything** for speed, volume, camera layout, transitions, duplicate and delete
+- **Undo / redo everything.** Drags and slider moves are merged into one step
+- **Activity strip** shows every long task with progress and time on the preview
+
+<br>
+
+## 📷 Camera
+
+*You, framed like a pro, even on a laptop webcam.*
+
+- **Shapes:** circle, rounded square or 16:9, any size, any corner, mirrored or not
+- **Layouts per clip:** overlay bubble, fullscreen, **split** (screen on top, you below) or hidden, changed mid-clip with keyframes
+- **Keep my face centred:** Vision face tracking reframes the camera around you
+- **Cut me out of the camera:** person segmentation blurs or removes your background
+- **Auto layout:** goes fullscreen on you while you talk and nothing happens on screen
+
+<br>
+
+## 🤖 AI editor
+
+*Describe the edit. Or just delete the words.*
+
+- **Edit with AI:** write what you want ("cut the first 10 seconds, zoom on the sidebar, add a title 'Setup'"). Claude can cut, split, speed up, zoom, add or remove texts, move the camera, change volumes, transitions and settings, remove silences, add captions and blur sensitive info, all applied as **one undo step**
+- **Edit by script:** the transcript as clickable words. Click to jump, shift-click to select, <kbd>⌫</kbd> to cut those words from the video
+- **Clean up:** finds pauses and filler words. Silent parts where you click or type are kept. Suggested cuts show red on the timeline; click a strip to keep it
+- **Speed up typing:** stretches where you were typing play back faster
+
+<br>
+
+## 💬 Subtitles
+
+*Accurate captions that get better every video.*
+
+- **On-device transcription** with Apple Speech in several languages. Nothing is uploaded
+- **Subtitle editor** in its own window: every line editable and playable, find & replace across all
+- **Glossary** (app-wide): your names and product terms become vocabulary hints and fixes for every transcript
+- **✦ Fix with Claude:** proofreads names, spelling and punctuation without rewording, marks what changed, and offers to **teach the glossary** so it's right next time
+- **One caption style for all lines:** font, colours, background, size, width and position, kept when you regenerate
+
+<br>
+
+## 📱 Social: YouTube Shorts on autopilot
+
+*One recording in, a stack of ready-to-post shorts out.*
+
+- **Make 1–8 shorts per video**, quick (15–30 s), standard (30–60 s) or long (1–3 min). Claude picks moments that work on their own; making more skips moments you already have
+- **Every short is a full project:** edit cuts, captions, titles and camera like any other video
+- **Layouts:** split (screen on top, you below), bubble, camera only, screen only
+- **Short styles:** Clean, Bold, Minimal, Pop, one per brand kit, plus your own saved presets
+  - **Captions:** pill / outline / shadow / plain, font, text and box colours, size, UPPERCASE, position
+  - **Hook title:** text, style, colours, size, how long it stays on screen
+  - **Progress bar** (solid or brand gradient, top or bottom), split ratio and divider line, logo, background, frame
+  - Choose one for new shorts, fine-tune it per short, or apply one style to all shorts of a video
+- **Post text included:** title, description and hashtags per short, editable from the original or the short itself
+- **Export one or all** to `Movies/<video> – Shorts/NN Title.mp4`, each with a `.txt` of the post text
+
+<br>
+
+## 📦 Publish
+
+*Everything you need to ship the video, generated from the video.*
+
+- **MP4 export, three files in sync:** the final video, the screen alone, and the camera full frame, ready for another editor
+- **🛡 Privacy auto-blur:** on-device OCR finds emails, phone numbers, keys and tokens, full names and faces and blurs them. Toggle each one or a whole kind, or add your own
+- **🎨 Brand kits:** background, fonts, colours, logo watermark, lower third, intro and outro cards in one click
+- **Content package:** titles, chapters, YouTube description, LinkedIn post and newsletter snippet, plus `chapters.txt` and `captions.srt`
+- **Thumbnail generator:** picks strong frames (face + detail), writes a headline, cuts you out, adds your logo, then exports YouTube, LinkedIn and square sizes
+- **Step-by-step guide:** one step per click with a marked screenshot, the clicked label (OCR) and text by Claude, as HTML, Markdown and PDF
+
+<br>
+
+---
 
 ## 🔁 How it fits together
 
@@ -120,21 +261,33 @@ flowchart LR
     E --> P
     P --> X[Composer<br/>AVVideoCompositing]
     X --> V[Preview]
-    X --> M[MP4 export]
+    X --> M[MP4 export<br/>+ screen & camera files]
     X --> S[Stills · thumbnails · guide]
+    P --> SH[Shorts<br/>one project each]
 ```
 
-The raw recording never changes. Every edit goes into `project.json`, and a single custom compositor
-renders the preview, the export and the stills.
+The raw recording never changes. Every edit goes into `project.json`, and one custom compositor
+renders the preview, the export and the stills, so what you see is exactly what you get.
+
+<br>
 
 <a id="shortcuts"></a>
 
 ## ⌨️ Shortcuts
 
+<table>
+<tr>
+<td valign="top">
+
 | Anywhere | |
 |---|---|
-| <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>2</kbd> | Start / stop recording (the menu-bar icon also stops) |
+| <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>2</kbd> | Start / stop recording |
 | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>1</kbd> | Take again: cut the sentence you just said |
+
+The menu-bar icon also stops a recording.
+
+</td>
+<td valign="top">
 
 | In the editor | |
 |---|---|
@@ -148,41 +301,101 @@ renders the preview, the export and the stills.
 | <kbd>←</kbd> <kbd>→</kbd> | Step a frame (with <kbd>⇧</kbd>: a second) |
 | <kbd>⌘</kbd> <kbd>E</kbd> | Export |
 
+</td>
+</tr>
+</table>
+
 **Right-click** anything on the timeline for speed, volume, camera layout, transitions, duplicate and
 delete. `open -a ScreenFrame <project>` opens a project folder.
 
 Each zoom either follows the cursor or holds a fixed focus point (`focusX`/`focusY`, normalized,
 top-left origin) chosen by dragging the zoom frame over a still in the inspector.
 
+<br>
+
 <a id="cli"></a>
 
 ## 💻 CLI
 
+Almost everything the app does also runs headless, which is handy for scripts and agents.
+
+<details open>
+<summary><b>Record & import</b></summary>
+
 ```bash
-ScreenFrame --import <x.screenstudio>
 ScreenFrame --record <seconds> [window=<id>|area=x,y,w,h] [system-audio]
-ScreenFrame --add-clip <project> <video file or recording folder>
 ScreenFrame --list-windows
+ScreenFrame --import <x.screenstudio>
+ScreenFrame --from-video <video> [more videos …]        # new project from video files
+ScreenFrame --add-clip <project> <video file or recording folder>
+```
+
+</details>
+
+<details open>
+<summary><b>Edit & AI</b></summary>
+
+```bash
+ScreenFrame --ai <project> "<request>"                  # edit by prompt
+ScreenFrame --pauses <project> [apply]                  # find (and cut) pauses
+ScreenFrame --retakes <project> <seconds> [seconds …]   # cut retakes at these marks
+ScreenFrame --cut-words <project>                       # test edit-by-script
+ScreenFrame --brand <project>                           # apply the first brand kit
+ScreenFrame --privacy <project>                         # scan & blur sensitive info
+```
+
+</details>
+
+<details open>
+<summary><b>Subtitles & analysis</b></summary>
+
+```bash
 ScreenFrame --transcribe <audio or video file> [de-DE|en-US|…]
+ScreenFrame --subs <project> [claude]                   # generate subtitles, optionally Fix with Claude
 ScreenFrame --faces <camera video>
-ScreenFrame --privacy <project>
-ScreenFrame --pauses <project> [apply]
-ScreenFrame --ai <project> "<request>"
-ScreenFrame --shorts <project> [count] [length=quick|standard|long] [layout=split|bubble|camera|screen]
+```
+
+</details>
+
+<details open>
+<summary><b>Shorts</b></summary>
+
+```bash
+ScreenFrame --shorts <project> [count] [length=quick|standard|long] [layout=split|bubble|camera|screen] [lang=…]
 ScreenFrame --export-shorts <project>
 ScreenFrame --short-style <short or video> <style name>          # e.g. snipKI, Bold
-ScreenFrame --still  <project> <seconds> <out.png> [key=value ...]
+```
+
+</details>
+
+<details open>
+<summary><b>Publish</b></summary>
+
+```bash
 ScreenFrame --export <project> <out.mp4> [parts=1] [key=value ...]   # e.g. aspect=square background=sunset
                                                      # parts=1: also "<out> - Screen.mp4" and "<out> - Camera.mp4"
+ScreenFrame --still  <project> <seconds> <out.png> [key=value ...]
+ScreenFrame --content <project>                         # content package
+ScreenFrame --thumbs <project>                          # thumbnails
+ScreenFrame --guide <project>                           # step-by-step guide
+ScreenFrame --snapshot <project> [tab] [out.png] [height] [light]   # debug: render the inspector to PNG
 ```
+
+</details>
+
+<br>
 
 ## 🧠 AI under the hood
 
 AI features call Claude through the newest local **Claude Code** binary
 (`-p --output-format json --tools ""`), so they use your own auth (including Bedrock). No extra API
 key is needed. Claude gets the project and transcript as JSON and returns a whitelisted list of
-operations, which the editor applies as one undo step. Transcription, face tracking, OCR and
-background segmentation run on-device with Apple frameworks.
+operations, which the editor applies as one undo step.
+
+Transcription, face tracking, OCR and background segmentation run **on-device** with Apple frameworks.
+Video and audio never leave the Mac. Claude only sees text: the transcript, project data and, for guides, the OCR'd labels of what you clicked.
+
+<br>
 
 <a id="architecture"></a>
 
@@ -256,14 +469,24 @@ background segmentation run on-device with Apple frameworks.
 
 </details>
 
+<br>
+
 ## 🗺 Roadmap
 
 - [x] Camera layouts that change mid-clip
 - [x] Caption styling for all captions at once
+- [x] Multiple YouTube Shorts per video with styles
+- [x] Screen and camera exported as separate, synced files
 - ~~GIF export~~ (not wanted)
+
+<br>
 
 ---
 
 <div align="center">
-<sub>Built with ScreenCaptureKit, AVFoundation, Core Image, Vision and Apple Speech. Made in Germany 🇩🇪</sub>
+
+<img src="docs/icon.png" width="48" alt="">
+
+<sub>Built with ScreenCaptureKit, AVFoundation, Core Image, Vision and Apple Speech.<br>Made in Germany 🇩🇪</sub>
+
 </div>
