@@ -5,7 +5,7 @@ struct InspectorView: View {
     @AppStorage("inspectorTab") private var tab = Tab.ai
 
     enum Tab: String, CaseIterable, Identifiable {
-        case ai, script, style, zoom, camera, audio, privacy, export
+        case ai, script, style, zoom, camera, audio, privacy, social, export
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -16,6 +16,7 @@ struct InspectorView: View {
             case .camera: return "Camera"
             case .audio: return "Audio"
             case .privacy: return "Privacy"
+            case .social: return "Social"
             case .export: return "Export"
             }
         }
@@ -28,6 +29,7 @@ struct InspectorView: View {
             case .camera: return "video"
             case .audio: return "waveform"
             case .privacy: return "eye.slash"
+            case .social: return "rectangle.portrait.on.rectangle.portrait"
             case .export: return "square.and.arrow.up"
             }
         }
@@ -77,6 +79,7 @@ struct InspectorView: View {
                         cleanup
                         captions
                     case .privacy: privacy
+                    case .social: SocialTab(model: model)
                     case .export:
                         export
                         social
@@ -97,16 +100,21 @@ struct InspectorView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(Tab.allCases) { item in
                 Button { tab = item } label: {
                     VStack(spacing: 3) {
                         Image(systemName: item.symbol).font(.system(size: 14, weight: .medium))
                             .frame(height: 16)
+                        // Nine tabs share ~34 pt each: one line, shrinking a little for the long names.
                         Text(item.title).font(.system(size: 9.5, weight: .medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .allowsTightening(true)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
+                    .padding(.horizontal, 1)
                     .foregroundStyle(tab == item ? Color.accentColor : Color.secondary)
                     .background(tab == item ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 7))
                     .contentShape(Rectangle())
@@ -116,7 +124,7 @@ struct InspectorView: View {
                 .opacity(item == .camera && !model.hasWebcam ? 0.45 : 1)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .padding(.vertical, 6)
     }
 
@@ -137,8 +145,10 @@ struct InspectorView: View {
                            progress: model.privacyProgress, action: model.scanPrivacy)
                 ActionCard(symbol: "video.badge.waveform", title: "Auto camera", detail: "Full screen while talking",
                            enabled: model.hasWebcam, action: model.autoCameraLayout)
-                ActionCard(symbol: "rectangle.portrait.on.rectangle.portrait", title: "Make Short", detail: "Best 30–60 s, 9:16",
-                           progress: model.progress(of: "short"), action: model.makeShort)
+                ActionCard(symbol: "rectangle.portrait.on.rectangle.portrait", title: "Make Shorts",
+                           detail: model.shorts.isEmpty ? "YouTube Shorts, 9:16" : "\(model.shorts.count) made · more",
+                           progress: model.progress(of: "shorts"),
+                           action: { tab = .social; model.makeShortsFromDefaults() })
             }
         }
         InspectorSection("Publish") {
@@ -360,9 +370,8 @@ struct InspectorView: View {
                 Button { model.settings.aspect = .vertical; model.settings.reframe = true } label: { Label("9:16", systemImage: "rectangle.portrait") }
                 Button { model.settings.aspect = .square; model.settings.reframe = true } label: { Label("1:1", systemImage: "square") }
                 Spacer()
-                Button(action: model.makeShort) { Label("Make Short", systemImage: "sparkles") }
-                    .disabled(model.aiBusy)
-                    .help("Claude picks the best 30–60 s and builds a vertical copy with title and captions")
+                Button { tab = .social } label: { Label("Shorts…", systemImage: "sparkles") }
+                    .help("Make YouTube Shorts from this video in the Social tab")
             }
             .controlSize(.small)
         }
@@ -464,7 +473,7 @@ struct InspectorView: View {
     }
 }
 
-private struct InspectorSection<Content: View>: View {
+struct InspectorSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
@@ -927,7 +936,7 @@ private struct CutReview: View {
     }
 }
 
-private struct EmptyState: View {
+struct EmptyState: View {
     let symbol: String
     let text: String
 

@@ -23,7 +23,7 @@ struct EditorView: View {
             }
             Divider()
             InspectorView(model: model)
-                .frame(width: 310)
+                .frame(width: 330)
         }
         .frame(minWidth: 1040, minHeight: 680)
         .sheet(item: $model.activeSheet) { sheet in

@@ -99,7 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func openEditor(_ url: URL) {
-        if let existing = editors[url] {
+        // The same folder can arrive as ".../X" or ".../X/": compare paths, never open it twice.
+        if let existing = editors.first(where: { $0.key.standardizedFileURL.path == url.standardizedFileURL.path })?.value {
             existing.window.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
@@ -113,6 +114,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let model = EditorModel(project: project)
         model.openProject = { [weak self] url in self?.openEditor(url) }
+        model.editorFor = { [weak self] url in
+            self?.editors.first { $0.key.standardizedFileURL.path == url.standardizedFileURL.path }?.value.model
+        }
+        model.closeProject = { [weak self] url in
+            self?.editors.first { $0.key.standardizedFileURL.path == url.standardizedFileURL.path }?.value.window.close()
+        }
         model.openSubtitleEditor = { [weak self, weak model] in
             guard let self, let model else { return }
             self.openSubtitles(for: model, url: url)

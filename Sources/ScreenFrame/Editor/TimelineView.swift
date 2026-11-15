@@ -496,6 +496,7 @@ struct TimelineView: View {
         switch layout {
         case .overlay: return Color(hex: 0x64D2FF)
         case .fullscreen: return Color(hex: 0xFF9F0A)
+        case .split: return Color(hex: 0xBF5AF2)
         case .hidden: return .gray
         }
     }

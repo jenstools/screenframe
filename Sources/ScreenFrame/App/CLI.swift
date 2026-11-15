@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 ///
 ///     ScreenFrame --import <x.screenstudio>
 ///     ScreenFrame --still  <project> <seconds> <out.png> [key=value ...]
-///     ScreenFrame --export <project> <out.mp4> [key=value ...]
+///     ScreenFrame --export <project> <out.mp4> [parts=1] [key=value ...]
 ///     ScreenFrame --record <seconds> [window=<id>|area=x,y,w,h] [system-audio]
 ///     ScreenFrame --add-clip <project> <video file or recording folder>
 ///     ScreenFrame --list-windows
@@ -15,13 +15,15 @@ import UniformTypeIdentifiers
 ///     ScreenFrame --privacy <project>            scan and save blur regions
 ///     ScreenFrame --pauses <project> [apply]
 ///     ScreenFrame --ai <project> "<request>"     edit by prompt (saved)
-///     ScreenFrame --short <project>
+///     ScreenFrame --shorts <project> [count] [length=quick|standard|long] [layout=split|bubble|camera|screen] [lang=de-DE]
+///     ScreenFrame --export-shorts <project>
+///     ScreenFrame --short-style <short or video> <style name>
 ///
 /// key=value overrides EditSettings fields, e.g. `aspect=square background=sunset zoomLevel=2`.
 enum CLI {
     static func handles(_ arguments: [String]) -> Bool {
         guard let first = arguments.dropFirst().first else { return false }
-        return ["--import", "--still", "--export", "--record", "--add-clip", "--list-windows", "--transcribe", "--faces", "--privacy", "--pauses", "--ai", "--short", "--brand", "--content", "--thumbs", "--guide", "--cut-words", "--retakes", "--from-video", "--subs"].contains(first)
+        return ["--import", "--still", "--export", "--record", "--add-clip", "--list-windows", "--transcribe", "--faces", "--privacy", "--pauses", "--ai", "--short", "--shorts", "--export-shorts", "--short-style", "--brand", "--content", "--thumbs", "--guide", "--cut-words", "--retakes", "--from-video", "--subs"].contains(first)
     }
 
     static func run(_ arguments: [String]) -> Never {
@@ -52,12 +54,16 @@ enum CLI {
             print("\(image.width)x\(image.height) → \(args[3])")
         case "--export":
             var project = try ProjectStore.load(URL(fileURLWithPath: args[1]))
-            project.doc.settings = try overrides(project.doc.settings, Array(args.dropFirst(3)))
+            // parts=1 also writes "<name> - Screen.mp4" and "<name> - Camera.mp4" (projects with a camera).
+            let extra = Array(args.dropFirst(3))
+            let parts = extra.contains { $0 == "parts=1" || $0 == "parts=true" }
+            project.doc.settings = try overrides(project.doc.settings, extra.filter { !$0.hasPrefix("parts=") })
             let started = Date()
-            try await Exporter.export(project: project, to: URL(fileURLWithPath: args[2])) { p in
+            let files = try await Exporter.exportAll(project: project, to: URL(fileURLWithPath: args[2]), parts: parts) { p in
                 FileHandle.standardError.write(String(format: "\r%3.0f%%", p * 100).data(using: .utf8)!)
             }
-            print(String(format: "\nexported in %.1fs → %@", Date().timeIntervalSince(started), args[2]))
+            print(String(format: "\nexported in %.1fs", Date().timeIntervalSince(started)))
+            for file in files { print("→ \(file.path)") }
         case "--record":
             let seconds = Double(args.count > 1 ? args[1] : "3") ?? 3
             var target = CaptureTarget.display(CGMainDisplayID())
@@ -120,7 +126,7 @@ enum CLI {
                 let list = found.filter { $0.kind == kind }
                 if !list.isEmpty { print("\(kind.label): \(list.count)") }
             }
-        case "--pauses", "--ai", "--short", "--brand", "--content", "--thumbs", "--guide", "--cut-words", "--subs":
+        case "--pauses", "--ai", "--short", "--shorts", "--export-shorts", "--short-style", "--brand", "--content", "--thumbs", "--guide", "--cut-words", "--subs":
             try await MainActor.run { try runEditorCommand(args) }
             // The editor commands finish asynchronously; wait for them to report back.
             while !CLI.done { try await Task.sleep(for: .milliseconds(200)) }
@@ -212,11 +218,40 @@ enum CLI {
                     model.sortedCaptions.forEach { print(model.recentlyFixed.contains($0.id) ? "  ✦" : "   ", $0.text) }
                     print("— would learn:", model.learnableFixes.map { "\($0.heard) → \($0.term)" })
                 }
-            case "--short":
-                model.makeShort()
+            case "--short", "--shorts":
+                var count: Int? = args[0] == "--short" ? 1 : nil
+                var length = ShortsPlanner.Length.standard
+                var layout = ShortLayout.split
+                for arg in args.dropFirst(2) {
+                    if let n = Int(arg) { count = n }
+                    if arg.hasPrefix("length="), let l = ShortsPlanner.Length(rawValue: String(arg.dropFirst(7))) { length = l }
+                    if arg.hasPrefix("layout="), let l = ShortLayout(rawValue: String(arg.dropFirst(7))) { layout = l }
+                    if arg.hasPrefix("lang=") { model.captionLanguage = String(arg.dropFirst(5)) }
+                }
+                model.makeShorts(count: count, length: length, layout: layout)
                 try? await Task.sleep(for: .milliseconds(100))
-                while model.aiBusy { try? await Task.sleep(for: .milliseconds(200)) }
-                print(model.aiStatus ?? model.errorMessage ?? "(no status)")
+                while model.shortsBusy || model.isRunning("words") { try? await Task.sleep(for: .milliseconds(200)) }
+                model.reloadShorts()
+                if let error = model.errorMessage { print(error) }
+                for entry in model.shorts {
+                    print(String(format: "#%d  %@  (%@)  %@", entry.info.index, entry.info.title, formatDuration(entry.duration), entry.url.path))
+                }
+            case "--short-style":
+                // Styles a short (or, given a video, all its shorts) with a preset by name.
+                let name = args.count > 2 ? args[2] : ""
+                if let style = model.shortStyles.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                    if model.isShort { model.applyShortStyle(style); model.saveNow() } else { model.applyStyleToAllShorts(style) }
+                    print("applied \(style.name)")
+                } else {
+                    print("styles: " + model.shortStyles.map(\.name).joined(separator: ", "))
+                }
+            case "--export-shorts":
+                model.reloadShorts()
+                model.exportShorts()
+                try? await Task.sleep(for: .milliseconds(100))
+                while model.shortsExporting != nil { try? await Task.sleep(for: .milliseconds(200)) }
+                if let error = model.errorMessage { print(error) }
+                print(model.lastOutputFolder?.path ?? "(nothing exported)")
             default: break
             }
             if let error = model.errorMessage { print("error: \(error)") }

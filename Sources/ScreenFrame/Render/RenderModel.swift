@@ -35,6 +35,14 @@ final class RenderModel: @unchecked Sendable {
     private let bubble: Bubble?
     private let unit: Double
     private let preview: Bool
+    /// Camera-only render: the camera full frame, black where the clip has none.
+    private let cameraOnly: Bool
+    private let isCard: Bool
+    /// Split layout: the screen part, rendered by its own model on its own (smaller) canvas, and
+    /// where the screen and camera parts sit in the output.
+    private let splitScreen: RenderModel?
+    private let splitScreenRect: CGRect
+    private let splitCameraRect: CGRect
     private let blurs: [BlurRegion]
     /// Face centre (x, y) and size in camera-file time, spring-smoothed.
     private let faceTrack: Track?
@@ -121,14 +129,14 @@ final class RenderModel: @unchecked Sendable {
             CGPoint(x: key.x * canvas.width, y: (1 - key.y) * canvas.height)
         }
 
-        /// Bubble rect plus how much of the overlay / fullscreen layout shows, at source time `t`
-        /// and timeline time `time`.
-        func state(source t: Double, timeline time: Double) -> (rect: CGRect, overlay: Double, fullscreen: Double) {
-            func weight(_ layout: Clip.CameraLayout) -> (Double, Double) {
-                (layout == .overlay ? 1 : 0, layout == .fullscreen ? 1 : 0)
+        /// Bubble rect plus how much of the overlay / fullscreen / split layout shows, at source
+        /// time `t` and timeline time `time`.
+        func state(source t: Double, timeline time: Double) -> (rect: CGRect, overlay: Double, fullscreen: Double, split: Double) {
+            func weight(_ layout: Clip.CameraLayout) -> (Double, Double, Double) {
+                (layout == .overlay ? 1 : 0, layout == .fullscreen ? 1 : 0, layout == .split ? 1 : 0)
             }
             var center = baseCenter(t)
-            var (overlay, fullscreen) = weight(baseLayout)
+            var (overlay, fullscreen, split) = weight(baseLayout)
             if let index = keys.lastIndex(where: { $0.t <= time }) {
                 let key = keys[index]
                 let from = index > 0 ? keyCenter(keys[index - 1]) : baseCenter(t)
@@ -143,16 +151,17 @@ final class RenderModel: @unchecked Sendable {
                     let m = min(1, (time - key.t) / Self.layoutFade)
                     overlay = a.0 + (b.0 - a.0) * m
                     fullscreen = a.1 + (b.1 - a.1) * m
+                    split = a.2 + (b.2 - a.2) * m
                 }
             }
             let x = min(max(center.x - size.width / 2, margin), canvas.width - margin - size.width)
             let y = min(max(center.y - size.height / 2, margin), canvas.height - margin - size.height)
-            return (CGRect(origin: CGPoint(x: x, y: y), size: size), overlay, fullscreen)
+            return (CGRect(origin: CGPoint(x: x, y: y), size: size), overlay, fullscreen, split)
         }
     }
 
     init(media: ClipMedia, settings: EditSettings, clip: Clip, canvas: CGSize, clipStart: Double, clipOffset: Double,
-         cameraKeys: [CameraKey] = [], blurs: [BlurRegion] = [], preview: Bool = false) {
+         cameraKeys: [CameraKey] = [], blurs: [BlurRegion] = [], preview: Bool = false, cameraOnly: Bool = false) {
         let info = media.info
         let zooms = clip.zooms
         var settings = settings
@@ -168,6 +177,8 @@ final class RenderModel: @unchecked Sendable {
         self.clipID = clip.id
         self.settings = settings
         self.preview = preview
+        self.cameraOnly = cameraOnly
+        self.isCard = clip.isCard == true
         self.blurs = blurs.filter { $0.enabled && $0.source == clip.source }
         self.webcamOffset = info.webcam?.offset ?? 0
         if settings.centerFace, let webcam = info.webcam,
@@ -219,6 +230,38 @@ final class RenderModel: @unchecked Sendable {
         self.cursor = cursor
         self.camera = Self.cameraTrack(info: info, settings: settings, zooms: zooms,
                                        cursor: cursor, canvas: canvas, videoRect: videoRect, follow: Self.fills(settings))
+
+        (splitScreenRect, splitCameraRect) = Self.splitRects(canvas: canvas, ratio: settings.splitRatio)
+        let usesSplit = settings.showCamera && info.webcam != nil && !card && !cameraOnly
+            && (clip.camera == .split || cameraKeys.contains { $0.layout == .split && $0.t >= clipOffset })
+        if usesSplit {
+            // The screen part fills its area and follows the cursor, like a vertical reframe.
+            var screen = settings
+            screen.showCamera = false
+            screen.reframe = true
+            screen.aspect = .vertical
+            screen.padding = 0
+            screen.cornerRadius = 0
+            screen.shadow = 0
+            self.splitScreen = RenderModel(media: media, settings: screen, clip: clip, canvas: splitScreenRect.size,
+                                           clipStart: clipStart, clipOffset: clipOffset, blurs: blurs, preview: preview)
+        } else {
+            self.splitScreen = nil
+        }
+    }
+
+    /// Split layout areas (Core Image coordinates): a vertical frame stacks the screen (top 58% by
+    /// default) over the camera; a landscape or square one puts the screen left (62%) and the camera right.
+    static func splitRects(canvas: CGSize, ratio: Double? = nil) -> (screen: CGRect, camera: CGRect) {
+        func even(_ v: CGFloat) -> CGFloat { CGFloat(Int(v.rounded()) & ~1) }
+        if canvas.height > canvas.width {
+            let top = even(canvas.height * min(0.8, max(0.3, ratio ?? 0.58)))
+            return (CGRect(x: 0, y: canvas.height - top, width: canvas.width, height: top),
+                    CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height - top))
+        }
+        let left = even(canvas.width * min(0.8, max(0.3, ratio ?? 0.62)))
+        return (CGRect(x: 0, y: 0, width: left, height: canvas.height),
+                CGRect(x: left, y: 0, width: canvas.width - left, height: canvas.height))
     }
 
     /// Vertical/square output with "fill & follow": the recording covers the frame and the camera
@@ -369,13 +412,21 @@ final class RenderModel: @unchecked Sendable {
         let t = clipStart + (time - clipOffset) * speed
         let bounds = CGRect(origin: .zero, size: canvas)
         let black = CIImage(color: .black).cropped(to: bounds)
+        if cameraOnly {
+            // Brand cards and clips without a camera stay black.
+            guard !isCard, let webcam else { return black }
+            return fullscreenCamera(prepareWebcam(webcam, t: t), t: t).cropped(to: bounds).composited(over: black)
+        }
         let cam = bubble.map { $0.placement.state(source: t, timeline: time) }
         let fullscreen = webcam == nil ? 0 : cam?.fullscreen ?? (cameraLayout == .fullscreen ? 1 : 0)
+        let split = webcam == nil || splitScreen == nil ? 0 : cam?.split ?? (cameraLayout == .split ? 1 : 0)
         let picture = webcam.map { prepareWebcam($0, t: t) }
 
         if fullscreen > 0.999, let picture {
             return fullscreenCamera(picture, t: t).cropped(to: bounds).composited(over: black)
         }
+        let splitImage = split > 0.001 ? picture.map { splitFrame(source: frame, camera: $0, time: time, t: t) } : nil
+        if split > 0.999, let splitImage { return splitImage }
 
         var image = backdrop
         if var frame {
@@ -426,7 +477,34 @@ final class RenderModel: @unchecked Sendable {
         if fullscreen > 0.001, let picture {
             image = faded(fullscreenCamera(picture, t: t).cropped(to: bounds), fullscreen).composited(over: image)
         }
+        if let splitImage { image = faded(splitImage, split).composited(over: image) }
         return image.composited(over: black)
+    }
+
+    /// Split layout: the screen part (its own model: fill, follow, zooms, cursor) in its area and the
+    /// face-centred camera in the other.
+    private func splitFrame(source frame: CIImage?, camera picture: CIImage, time: Double, t: Double) -> CIImage {
+        let bounds = CGRect(origin: .zero, size: canvas)
+        let black = CIImage(color: .black).cropped(to: bounds)
+        var image = black
+        if let splitScreen {
+            let screen = splitScreen.render(source: frame, webcam: nil, time: time)
+                .cropped(to: CGRect(origin: .zero, size: splitScreenRect.size))
+                .transformed(by: CGAffineTransform(translationX: splitScreenRect.minX, y: splitScreenRect.minY))
+            image = screen.composited(over: image)
+        }
+        var face = fill(picture, into: splitCameraRect, face: true, t: t).cropped(to: splitCameraRect)
+        if settings.cameraBackground == .remove { face = face.composited(over: backdrop.cropped(to: splitCameraRect)) }
+        image = face.composited(over: image)
+        if let divider = settings.splitDivider {
+            let w = max(1, (divider.width * min(canvas.width, canvas.height)).rounded())
+            let vertical = splitScreenRect.minY > splitCameraRect.minY
+            let line = vertical
+                ? CGRect(x: 0, y: splitScreenRect.minY - w / 2, width: canvas.width, height: w)
+                : CGRect(x: splitScreenRect.maxX - w / 2, y: 0, width: w, height: canvas.height)
+            image = CIImage(color: CIColor(cgColor: .hex(divider.color))).cropped(to: line).composited(over: image)
+        }
+        return image
     }
 
     private func faded(_ image: CIImage, _ alpha: Double) -> CIImage {
@@ -446,6 +524,11 @@ final class RenderModel: @unchecked Sendable {
     /// zoom and pan included. Output canvas coordinates, bottom-left origin.
     func outputRect(forSource r: CGRect, time: Double) -> CGRect {
         let t = clipStart + (time - clipOffset) * speed
+        if let splitScreen, let state = bubble?.placement.state(source: t, timeline: time), state.split > 0.5 {
+            return splitScreen.outputRect(forSource: r, time: time)
+                .offsetBy(dx: splitScreenRect.minX, dy: splitScreenRect.minY)
+                .intersection(splitScreenRect)
+        }
         let placed = CGRect(x: videoRect.minX + r.minX * videoRect.width, y: videoRect.maxY - r.maxY * videoRect.height,
                             width: r.width * videoRect.width, height: r.height * videoRect.height)
         return placed.applying(cameraTransform(at: t))

@@ -41,6 +41,8 @@ struct Project {
     }
 
     var totalDuration: Double { TimelineLayout.duration(of: self) }
+    /// Some clip on the timeline was recorded with a camera.
+    var hasCamera: Bool { doc.clips.contains { media(for: $0)?.info.webcam != nil } }
 }
 
 struct ClipMedia {
@@ -219,6 +221,8 @@ enum ProjectStore {
         let name: String
         let duration: Double
         let created: Date
+        /// Cut from another video in its Social tab.
+        var isShort = false
     }
 
     static func list() -> [Summary] {
@@ -227,7 +231,8 @@ enum ProjectStore {
         return items.compactMap { url -> Summary? in
             guard let project = try? load(url) else { return nil }
             let created = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-            return Summary(url: url, name: project.doc.name, duration: project.totalDuration, created: created)
+            return Summary(url: url, name: project.doc.name, duration: project.totalDuration, created: created,
+                           isShort: ShortStore.isShort(url))
         }
         .sorted { $0.created > $1.created }
     }

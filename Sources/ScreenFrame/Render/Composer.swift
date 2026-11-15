@@ -27,15 +27,18 @@ final class FrameInstruction: NSObject, AVVideoCompositionInstructionProtocol {
     let canvas: CGSize
     /// Brand logo, already scaled, faded and positioned.
     let watermark: CIImage?
+    /// Progress bar and the timeline length it measures against.
+    let progress: (bar: ProgressBar, duration: Double)?
 
     init(timeRange: CMTimeRange, layers: [Layer], transition: Transition?, texts: TextRenderer?, canvas: CGSize,
-         watermark: CIImage? = nil) {
+         watermark: CIImage? = nil, progress: (bar: ProgressBar, duration: Double)? = nil) {
         self.timeRange = timeRange
         self.layers = layers
         self.transition = transition
         self.texts = texts
         self.canvas = canvas
         self.watermark = watermark
+        self.progress = progress
         self.requiredSourceTrackIDs = layers.flatMap { [$0.screenTrack] + ($0.webcamTrack.map { [$0] } ?? []) }.map { NSNumber(value: $0) }
     }
 }
@@ -80,6 +83,10 @@ final class FrameCompositor: NSObject, AVVideoCompositing {
             }
             if let texts = instruction.texts { image = texts.render(over: image, at: time) }
             if let watermark = instruction.watermark { image = watermark.composited(over: image) }
+            if let progress = instruction.progress {
+                image = Self.progressBar(progress.bar, fraction: time / max(0.01, progress.duration), canvas: instruction.canvas)
+                    .composited(over: image)
+            }
             Self.context.render(image, to: output, bounds: CGRect(origin: .zero, size: instruction.canvas),
                                 colorSpace: Self.outputColorSpace)
             request.finish(withComposedVideoFrame: output)
@@ -109,6 +116,26 @@ final class FrameCompositor: NSObject, AVVideoCompositing {
     private static func faded(_ image: CIImage, _ alpha: Double) -> CIImage {
         image.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: max(0, min(1, alpha)))])
     }
+
+    /// A faint track with the played part filled (solid, or a gradient across the whole width).
+    static func progressBar(_ bar: ProgressBar, fraction: Double, canvas: CGSize) -> CIImage {
+        let h = max(2, (bar.height * canvas.height).rounded())
+        let y = bar.atTop ? canvas.height - h : 0
+        let track = CGRect(x: 0, y: y, width: canvas.width, height: h)
+        let filled = CGRect(x: 0, y: y, width: (canvas.width * min(1, max(0, fraction))).rounded(), height: h)
+        let colors = bar.colors.isEmpty ? [0xFFFFFF] : bar.colors
+        let fill: CIImage
+        if colors.count > 1 {
+            fill = CIFilter(name: "CILinearGradient", parameters: [
+                "inputPoint0": CIVector(x: 0, y: y), "inputPoint1": CIVector(x: canvas.width, y: y),
+                "inputColor0": CIColor(cgColor: .hex(colors[0])), "inputColor1": CIColor(cgColor: .hex(colors[colors.count - 1])),
+            ])?.outputImage ?? CIImage(color: CIColor(cgColor: .hex(colors[0])))
+        } else {
+            fill = CIImage(color: CIColor(cgColor: .hex(colors[0])))
+        }
+        return fill.cropped(to: filled)
+            .composited(over: CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: 0.22)).cropped(to: track))
+    }
 }
 
 struct BuiltComposition {
@@ -121,6 +148,27 @@ struct BuiltComposition {
 enum ComposerError: LocalizedError {
     case empty
     var errorDescription: String? { "There is nothing to play: every clip is empty or its media is missing." }
+}
+
+/// What a render shows. Export writes the final edit plus, for projects with a camera, a screen-only
+/// and a camera-only version on the same timeline (same cuts, speed, transitions and audio), so the
+/// three files line up frame for frame.
+enum RenderVariant: String, CaseIterable {
+    /// Everything: screen, camera, titles, captions, logo.
+    case final
+    /// The edited screen without camera, titles, captions or logo.
+    case screen
+    /// The camera full frame (black where a clip has no camera), without titles, captions or logo.
+    case camera
+
+    /// Suffix for the extra files next to the final export.
+    var fileSuffix: String {
+        switch self {
+        case .final: return ""
+        case .screen: return " - Screen"
+        case .camera: return " - Camera"
+        }
+    }
 }
 
 enum Composer {
@@ -167,10 +215,12 @@ enum Composer {
 
     /// All clips on alternating A/B tracks (so transitions can overlap), one A/B pair per audio lane
     /// and for the webcam, and a video composition with one instruction per stretch of timeline.
-    static func build(project: Project, maxLongSide: CGFloat?, resolution: ExportResolution?) async throws -> BuiltComposition {
-        let settings = project.doc.settings
+    static func build(project: Project, maxLongSide: CGFloat?, resolution: ExportResolution?,
+                      variant: RenderVariant = .final) async throws -> BuiltComposition {
+        var settings = project.doc.settings
+        if variant == .screen { settings.showCamera = false }
         let canvas = canvas(for: project, maxLongSide: maxLongSide, resolution: resolution)
-        let texts = TextRenderer(texts: project.doc.texts, canvas: canvas)
+        let texts = TextRenderer(texts: variant == .final ? project.doc.texts : [], canvas: canvas)
         let placements = TimelineLayout.place(project.doc.clips, in: project)
         guard !placements.isEmpty else { throw ComposerError.empty }
 
@@ -201,7 +251,7 @@ enum Composer {
             if end - start > 0.02 { try insert(videoTrack, from: start, to: end, into: screen, at: p.offset, speed: p.speed) }
 
             var webcamTrackID: CMPersistentTrackID?
-            if let webcam = media.info.webcam {
+            if variant != .screen, let webcam = media.info.webcam {
                 let camAsset = AVURLAsset(url: media.folder.appendingPathComponent(webcam.file))
                 if let source = try? await camAsset.loadTracks(withMediaType: .video).first,
                    let camRange = try? await source.load(.timeRange) {
@@ -234,7 +284,7 @@ enum Composer {
 
             let model = RenderModel(media: media, settings: settings, clip: p.clip, canvas: canvas,
                                     clipStart: start, clipOffset: p.offset, cameraKeys: project.doc.cameraKeys,
-                                    blurs: project.doc.blurs, preview: maxLongSide != nil)
+                                    blurs: project.doc.blurs, preview: maxLongSide != nil, cameraOnly: variant == .camera)
             layers.append(FrameInstruction.Layer(model: model, screenTrack: screen.trackID, webcamTrack: webcamTrackID))
         }
 
@@ -244,14 +294,15 @@ enum Composer {
         var instructions: [FrameInstruction] = []
         var cursor = CMTime.zero
         let textRenderer = texts.isEmpty ? nil : texts
-        let watermark = settings.watermark.flatMap { makeWatermark($0, canvas: canvas) }
+        let watermark = variant == .final ? settings.watermark.flatMap { makeWatermark($0, canvas: canvas) } : nil
+        let progress = variant == .final ? settings.progressBar.map { (bar: $0, duration: TimelineLayout.duration(of: project)) } : nil
         for (k, p) in placements.enumerated() {
             guard let layer = layers[k] else { continue }
             let soloEnd = k == placements.count - 1 ? totalEnd : time(p.end - p.overlapOut)
             if soloEnd > cursor {
                 instructions.append(FrameInstruction(timeRange: CMTimeRange(start: cursor, end: soloEnd), layers: [layer],
                                                      transition: nil, texts: textRenderer, canvas: canvas,
-                                                     watermark: p.clip.isCard == true ? nil : watermark))
+                                                     watermark: p.clip.isCard == true ? nil : watermark, progress: progress))
                 cursor = soloEnd
             }
             if p.overlapOut > 0, k + 1 < placements.count, let next = layers[k + 1], let kind = p.clip.transition?.kind {
@@ -260,7 +311,7 @@ enum Composer {
                     instructions.append(FrameInstruction(
                         timeRange: CMTimeRange(start: cursor, end: overlapEnd), layers: [layer, next],
                         transition: .init(kind: kind, start: cursor.seconds, duration: overlapEnd.seconds - cursor.seconds),
-                        texts: textRenderer, canvas: canvas, watermark: watermark))
+                        texts: textRenderer, canvas: canvas, watermark: watermark, progress: progress))
                     cursor = overlapEnd
                 }
             }
@@ -269,7 +320,8 @@ enum Composer {
         if cursor < totalEnd, let last = instructions.last {
             instructions[instructions.count - 1] = FrameInstruction(timeRange: CMTimeRange(start: last.timeRange.start, end: totalEnd),
                                                                     layers: last.layers, transition: last.transition,
-                                                                    texts: last.texts, canvas: canvas, watermark: watermark)
+                                                                    texts: last.texts, canvas: canvas, watermark: watermark,
+                                                                    progress: progress)
         }
 
         let videoComposition = AVMutableVideoComposition()
@@ -305,8 +357,38 @@ enum Composer {
 }
 
 enum Exporter {
-    static func export(project: Project, to url: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
-        let built = try await Composer.build(project: project, maxLongSide: nil, resolution: project.doc.settings.exportResolution)
+    /// Where a variant goes next to the final file: "Demo.mp4" → "Demo - Screen.mp4".
+    static func url(for variant: RenderVariant, final url: URL) -> URL {
+        guard variant != .final else { return url }
+        let base = url.deletingPathExtension().lastPathComponent + variant.fileSuffix
+        return url.deletingLastPathComponent().appendingPathComponent(base).appendingPathExtension(url.pathExtension)
+    }
+
+    /// The variants an export writes: the final edit, plus screen and camera when `parts` is on and
+    /// the project has a camera.
+    static func variants(for project: Project, parts: Bool) -> [RenderVariant] {
+        parts && project.hasCamera ? [.final, .screen, .camera] : [.final]
+    }
+
+    /// Exports each variant in turn; progress runs 0…1 over all of them. Returns the written files.
+    @discardableResult
+    static func exportAll(project: Project, to url: URL, parts: Bool,
+                          progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
+        let variants = variants(for: project, parts: parts)
+        var written: [URL] = []
+        for (i, variant) in variants.enumerated() {
+            let target = self.url(for: variant, final: url)
+            let n = Double(variants.count), base = Double(i)
+            try await export(project: project, to: target, variant: variant) { p in progress((base + p) / n) }
+            written.append(target)
+        }
+        return written
+    }
+
+    static func export(project: Project, to url: URL, variant: RenderVariant = .final,
+                       progress: @escaping @Sendable (Double) -> Void) async throws {
+        let built = try await Composer.build(project: project, maxLongSide: nil, resolution: project.doc.settings.exportResolution,
+                                             variant: variant)
         guard let session = AVAssetExportSession(asset: built.asset, presetName: AVAssetExportPresetHighestQuality) else {
             throw NSError(domain: "ScreenFrame", code: 2, userInfo: [NSLocalizedDescriptionKey: "Export is not available"])
         }

@@ -40,7 +40,7 @@ final class TextRenderer: @unchecked Sendable {
     }
 
     private func sprite(for text: TextOverlay) -> CIImage? {
-        let key = "\(text.text)|\(text.size)|\(text.color)|\(text.style.rawValue)|\(text.fontName ?? "")|\(text.pillColor ?? 0)|\(text.wrapWidth ?? 0)"
+        let key = "\(text.text)|\(text.size)|\(text.color)|\(text.style.rawValue)|\(text.fontName ?? "")|\(text.pillColor ?? 0)|\(text.wrapWidth ?? 0)|\(text.uppercase ?? false)"
         lock.lock()
         defer { lock.unlock() }
         if let cached = sprites[key] { return cached }
@@ -76,7 +76,8 @@ final class TextRenderer: @unchecked Sendable {
                                                nil, nil, nil))
         }
         var wrapped: [String] = []
-        for paragraph in text.text.components(separatedBy: "\n") {
+        let shown = text.uppercase == true ? text.text.uppercased() : text.text
+        for paragraph in shown.components(separatedBy: "\n") {
             var line = ""
             for word in paragraph.split(separator: " ", omittingEmptySubsequences: false).map(String.init) {
                 let candidate = line.isEmpty ? word : line + " " + word
@@ -123,14 +124,27 @@ final class TextRenderer: @unchecked Sendable {
             ctx.fillPath()
         case .shadow:
             ctx.setShadow(offset: CGSize(width: 0, height: -fontSize * 0.04), blur: fontSize * 0.22, color: CGColor(gray: 0, alpha: 0.7))
+        case .outline:
+            // Stroke pass first (round joins), then the fill on top.
+            ctx.setLineJoin(.round)
+            ctx.setLineWidth(fontSize * 0.16)
+            ctx.setStrokeColor(text.pillColor.map { CGColor.hex($0) } ?? CGColor(gray: 0, alpha: 1))
+            ctx.setTextDrawingMode(.stroke)
+            for (i, line) in layout.lines.enumerated() {
+                ctx.textPosition = position(i)
+                CTLineDraw(line, ctx)
+            }
+            ctx.setTextDrawingMode(.fill)
         case .plain:
             break
         }
 
+        func position(_ i: Int) -> CGPoint {
+            CGPoint(x: (layout.size.width - layout.widths[i]) / 2,
+                    y: layout.size.height - layout.padding.height - layout.ascent - CGFloat(i) * layout.lineHeight)
+        }
         for (i, line) in layout.lines.enumerated() {
-            let x = (layout.size.width - layout.widths[i]) / 2
-            let y = layout.size.height - layout.padding.height - layout.ascent - CGFloat(i) * layout.lineHeight
-            ctx.textPosition = CGPoint(x: x, y: y)
+            ctx.textPosition = position(i)
             CTLineDraw(line, ctx)
         }
         return ctx.makeImage()

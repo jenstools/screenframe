@@ -75,13 +75,26 @@ Design notes from the Screen Studio teardown live in `~/screenstudio-re/BLUEPRIN
 - **Edit by prompt:** describe the change, Claude applies it as one undo step
 - **Edit by script:** delete words from the transcript to cut the video
 - Pause and filler-word cleanup
-- **Make Short:** Claude picks 30–60 s and builds a 9:16 version
+- **Make Shorts:** Claude picks several moments that work on their own and builds each as a 9:16 short
 - Face-centred camera, background blur or removal
 
 </td>
 <td width="50%" valign="top">
 
+### 📱 Social
+- **Social tab:** make 1–8 YouTube Shorts per video (15–30 s, 30–60 s or 1–3 min); new ones skip moments you already have
+- Each short is a full project: edit cuts, captions, titles and camera like any video
+- Layouts: **Split** (screen on top, you below), bubble, camera only, screen only
+- **Styles:** Clean, Bold, Minimal, Pop, one per brand kit (your CI: font, colours, gradient, logo) and your own saved presets
+  - Captions: pill / outline / shadow / plain, font, text and box colours, size, UPPERCASE, position
+  - Hook title: text, style, colours, size, how long it shows
+  - Progress bar (solid or brand gradient, top or bottom), split ratio and divider line, logo, background, frame
+  - Pick one for new shorts, fine-tune it per short, or give all shorts of a video one style
+- Title, description and hashtags per short, editable in the original's list or the short's own window
+- Export one or all: `Movies/<video> – Shorts/NN Title.mp4` + `.txt` with the post text
+
 ### 📦 Publish
+- Export writes three files in sync: the final video, the screen alone, and the camera full frame
 - On-device captions (Apple Speech) with a subtitle editor and glossary
 - One caption style for all lines (font, colours, background, size, width), kept when regenerating
 - Privacy auto-blur for emails, phone numbers, tokens, names and faces
@@ -155,9 +168,12 @@ ScreenFrame --faces <camera video>
 ScreenFrame --privacy <project>
 ScreenFrame --pauses <project> [apply]
 ScreenFrame --ai <project> "<request>"
-ScreenFrame --short <project>
+ScreenFrame --shorts <project> [count] [length=quick|standard|long] [layout=split|bubble|camera|screen]
+ScreenFrame --export-shorts <project>
+ScreenFrame --short-style <short or video> <style name>          # e.g. snipKI, Bold
 ScreenFrame --still  <project> <seconds> <out.png> [key=value ...]
-ScreenFrame --export <project> <out.mp4> [key=value ...]   # e.g. aspect=square background=sunset
+ScreenFrame --export <project> <out.mp4> [parts=1] [key=value ...]   # e.g. aspect=square background=sunset
+                                                     # parts=1: also "<out> - Screen.mp4" and "<out> - Camera.mp4"
 ```
 
 ## 🧠 AI under the hood
@@ -207,6 +223,7 @@ background segmentation run on-device with Apple frameworks.
 | Stage | Where | What |
 |---|---|---|
 | Playback/export | `Render/Composer.swift` | one custom `AVVideoCompositing` drives AVPlayer preview, AVAssetExportSession (H.264 MP4) and stills |
+| Separate files | `Render/Composer.swift` (`RenderVariant`, `Exporter.exportAll`) | with a camera, export also renders `<name> - Screen.mp4` (no camera, titles, captions or logo) and `<name> - Camera.mp4` (camera full frame, black where a clip has none) on the same timeline, so all three line up frame for frame; a checkbox in the save panel turns it off |
 | Clips | `Render/Composer.swift` | clips play back to back on two alternating video tracks, one RenderModel per clip; zooms live on the clip in source time |
 | Transitions | `Render/Composer.swift` | crossfade, fade through black, slide; two-layer instructions over the overlap |
 | Audio | `Render/Composer.swift`, `Render/Waveform.swift` | A/B composition tracks per lane (voice, system, clip audio); `AVAudioMix` applies lane volume × clip volume, fades across transitions; waveform peaks for the timeline |
@@ -227,7 +244,9 @@ background segmentation run on-device with Apple frameworks.
 | Clean up | `Analysis/Cleanup.swift`, `Model/EditOps.swift` | pauses from the voice level (keeps silent demos with clicks/typing/mouse), filler words from the transcript; cuts preview red on the timeline; `EditOps` cuts/splits/retimes and moves titles, captions and camera keys with the content |
 | Privacy | `Analysis/PrivacyScanner.swift` | Vision OCR at 1 fps (unchanged frames skipped): emails, phone numbers, keys/tokens, full names (two capitalised words, UI words excluded), faces → `BlurRegion`s, rendered as average-pixelate-blur |
 | Edit by prompt | `Analysis/AIClient.swift`, `Analysis/AIEditor.swift` | Claude via the newest local Claude Code binary (`-p --output-format json --tools ""`, so the user's own auth/Bedrock); project + transcript as JSON in, a whitelisted operation list out, applied as one undo step |
-| Social | `Editor/EditorModel+AI.swift` | 9:16/1:1 "fill frame & follow cursor"; "Make Short" lets Claude pick 30–60 s from the transcript and builds a vertical copy with a hook title |
+| Social | `Editor/EditorModel+Social.swift`, `Editor/SocialViews.swift`, `Analysis/ShortsPlanner.swift`, `Model/Social.swift` | Social tab: Claude picks N non-overlapping shorts from the transcript (hook, YouTube title, description, hashtags; without AI the windows with most speech); each is copied to its own project (APFS clone), cut with `EditOps`, set to 9:16 with captions rebuilt in a vertical style and a hook title. Post text lives in `social.json` beside project.json (so the short's window and the original's list can both edit it), linked to the original by path; export writes MP4 + .txt to `Movies/<video> – Shorts/` |
+| Short styles | `Model/ShortStyle.swift`, `Editor/ShortStyleViews.swift` | a `ShortStyle` preset is written into the short's settings and texts (caption style, hook text marked `hook`, `progressBar`, `splitRatio`, `splitDivider`, watermark, background, padding) and read back from them for the editor, so every detail stays editable and undoable; built-ins, one per brand kit, saved ones in `shortstyles.json`; text style `outline` and `uppercase` in `TextRenderer`, progress bar drawn by the compositor |
+| Split layout | `Render/RenderModel.swift` (`splitFrame`) | camera layout `split`: a second RenderModel renders the screen (fill & follow, zooms, cursor) into the top 58% (vertical) or left 62% (landscape), the face-centred camera fills the rest; fades like the other layouts |
 | Script editing | `Editor/PublishViews.swift` (`TranscriptPanel`) | on-device transcript as clickable words; shift-click selects, ⌫ cuts the words from the video (`EditOps.remove`) |
 | Subtitles | `Editor/SubtitleEditor.swift`, `Model/Glossary.swift` | own window: every line editable and playable, find & replace across all; glossary (app-wide) gives the recognizer vocabulary hints and fixes every transcript (phrase-level, after splitting multi-word segments); "Fix with Claude" proofreads names/spelling/punctuation without rewording, marks changes, and can teach the glossary what it corrected |
 | Caption style | `Model/EditSettings.swift` (`CaptionStyle`), `Editor/EditorModel+Subtitles.swift` | one look for all subtitles (style, position, size, width, font, text and background colour), saved in the project so generated captions get it; changing one property keeps per-line tweaks of the others; "Use This Style for All Subtitles" copies one line's look; brand kits set its font |

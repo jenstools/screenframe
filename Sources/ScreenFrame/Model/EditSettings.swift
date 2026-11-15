@@ -55,6 +55,21 @@ enum CameraShape: String, Codable, CaseIterable, Identifiable {
     var aspect: Double { self == .wide ? 16.0 / 9.0 : 1 }
 }
 
+/// A thin bar along the top or bottom edge showing how much of the video has played.
+struct ProgressBar: Codable, Equatable {
+    /// One colour, or several for a gradient along the bar.
+    var colors: [UInt32] = [0xFFFFFF]
+    /// Thickness as a share of the output height.
+    var height = 0.006
+    var atTop = false
+}
+
+struct SplitDivider: Codable, Equatable {
+    var color: UInt32 = 0xFFFFFF
+    /// Thickness as a share of the output's shorter side.
+    var width = 0.006
+}
+
 struct Watermark: Codable, Equatable {
     /// Absolute path of the logo image.
     var path: String
@@ -144,6 +159,13 @@ struct EditSettings: Codable, Equatable {
     /// projects then take it from their first caption).
     var captionStyle: CaptionStyle?
 
+    /// Shorts: a bar that fills as the video plays. Nil = off.
+    var progressBar: ProgressBar?
+    /// Split layout: share of the frame the screen gets (vertical: height, landscape: width). Nil = 0.58 / 0.62.
+    var splitRatio: Double?
+    /// Split layout: a line between screen and camera. Nil = none.
+    var splitDivider: SplitDivider?
+
     func volume(for kind: String) -> Float {
         muted.contains(kind) ? 0 : Float(volumes[kind] ?? 1)
     }
@@ -186,6 +208,9 @@ struct EditSettings: Codable, Equatable {
         watermark = try? c.decodeIfPresent(Watermark.self, forKey: .watermark)
         typingSpeed = try c.decodeIfPresent(Double.self, forKey: .typingSpeed) ?? d.typingSpeed
         captionStyle = try? c.decodeIfPresent(CaptionStyle.self, forKey: .captionStyle)
+        progressBar = try? c.decodeIfPresent(ProgressBar.self, forKey: .progressBar)
+        splitRatio = try c.decodeIfPresent(Double.self, forKey: .splitRatio)
+        splitDivider = try? c.decodeIfPresent(SplitDivider.self, forKey: .splitDivider)
     }
 }
 
@@ -202,6 +227,7 @@ struct CaptionStyle: Codable, Equatable {
     var pillColor: UInt32?
     /// Nil = 88% of the frame.
     var wrapWidth: Double?
+    var uppercase: Bool?
 
     init() {}
 
@@ -213,6 +239,7 @@ struct CaptionStyle: Codable, Equatable {
         fontName = text.fontName
         pillColor = text.pillColor
         wrapWidth = text.wrapWidth
+        uppercase = text.uppercase
     }
 
     init(from decoder: Decoder) throws {
@@ -225,6 +252,7 @@ struct CaptionStyle: Codable, Equatable {
         fontName = try c.decodeIfPresent(String.self, forKey: .fontName)
         pillColor = try c.decodeIfPresent(UInt32.self, forKey: .pillColor)
         wrapWidth = try c.decodeIfPresent(Double.self, forKey: .wrapWidth)
+        uppercase = try c.decodeIfPresent(Bool.self, forKey: .uppercase)
     }
 
     /// Gives a subtitle this look. With `old`, only what differs from it is applied, so changing
@@ -240,6 +268,7 @@ struct CaptionStyle: Codable, Equatable {
         if changed(\.fontName) { text.fontName = fontName }
         if changed(\.pillColor) { text.pillColor = pillColor }
         if changed(\.wrapWidth) { text.wrapWidth = wrapWidth }
+        if changed(\.uppercase) { text.uppercase = uppercase }
     }
 }
 
@@ -292,7 +321,8 @@ struct Clip: Codable, Identifiable, Equatable {
     var isCard: Bool?
 
     enum CameraLayout: String, Codable, CaseIterable, Identifiable {
-        case overlay, fullscreen, hidden
+        /// `split`: screen and camera side by side, stacked (screen on top) in a vertical frame.
+        case overlay, fullscreen, split, hidden
         var id: String { rawValue }
         var label: String { rawValue.capitalized }
     }
@@ -338,7 +368,8 @@ struct ClipTransition: Codable, Equatable {
 
 struct TextOverlay: Codable, Identifiable, Equatable {
     enum Style: String, Codable, CaseIterable, Identifiable {
-        case pill, shadow, plain
+        /// `outline`: thick stroke around the letters (pill colour, else black), the classic Shorts look.
+        case pill, outline, shadow, plain
         var id: String { rawValue }
         var label: String { rawValue.capitalized }
     }
@@ -365,8 +396,13 @@ struct TextOverlay: Codable, Identifiable, Equatable {
     var brand: Bool?
     /// Wrap width as a share of the frame (default 88%).
     var wrapWidth: Double?
+    /// Drawn in capitals (the text itself keeps its case).
+    var uppercase: Bool?
+    /// The hook title at the start of a short.
+    var hook: Bool?
 
     var caption: Bool { isCaption ?? false }
+    var isHook: Bool { hook ?? false }
 }
 
 /// A camera keyframe on the Camera lane: from `t` on, the bubble sits at (x, y) in the given

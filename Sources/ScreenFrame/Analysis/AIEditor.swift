@@ -22,7 +22,7 @@ enum AIEditor {
     {"op":"remove_zooms","start":s,"end":s}                 delete zooms overlapping a stretch (omit times for all)
     {"op":"text","start":s,"end":s,"text":"...","position":"top|center|bottom","style":"pill|shadow|plain"}
     {"op":"remove_texts","start":s,"end":s}                 titles only, not captions
-    {"op":"camera","at":s,"position":"top-left|top-right|bottom-left|bottom-right|center","layout":"overlay|fullscreen|hidden"}
+    {"op":"camera","at":s,"position":"top-left|top-right|bottom-left|bottom-right|center","layout":"overlay|fullscreen|split|hidden"}
     {"op":"volume","lane":"voice|system|clip","volume":0-1,"start":s,"end":s}   start/end optional (whole video)
     {"op":"transition","after_clip":n,"kind":"crossfade|fade|slide|none"}   n = 1-based clip number
     {"op":"setting","key":"background|aspect|padding|cornerRadius|cursorScale|zoomLevel|motionBlur|showCursor|autoZoom|showCamera|cameraShape|cameraSize|reframe","value":...}
@@ -57,18 +57,6 @@ enum AIEditor {
         project["transcript"] = model.transcriptLines().map { "[\(r($0.start))–\(r($0.end))] \($0.text)" }
         let data = (try? JSONSerialization.data(withJSONObject: project, options: [.prettyPrinted, .sortedKeys])) ?? Data()
         return "Project:\n" + (String(data: data, encoding: .utf8) ?? "{}") + "\n\nRequest: " + request
-    }
-
-    static let shortSystemPrompt = """
-    You pick the best moment of a screen recording for a vertical social video (LinkedIn, Reels, Shorts). \
-    Choose 1–3 stretches from the transcript, 30–60 seconds in total, that work on their own: a clear hook \
-    in the first seconds, one idea, a natural ending. Also write a punchy title (max 6 words, the language \
-    of the transcript). Answer with ONLY JSON: {"title": "...", "ranges": [{"start": s, "end": s}]}
-    """
-
-    static func shortPrompt(lines: [Captioner.Word], duration: Double) -> String {
-        "Duration: \(Int(duration)) s\nTranscript (timeline seconds):\n"
-            + lines.map { String(format: "[%.1f–%.1f] %@", $0.start, $0.end, $0.text) }.joined(separator: "\n")
     }
 
     nonisolated static func number(_ value: Any?) -> Double? {

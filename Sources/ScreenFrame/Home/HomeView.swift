@@ -273,7 +273,15 @@ private struct ProjectRow: View {
             }
             .frame(width: 96, height: 54)
             VStack(alignment: .leading, spacing: 3) {
-                Text(summary.name).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(summary.name).lineLimit(1)
+                    if summary.isShort {
+                        Text("SHORT").font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5).padding(.vertical, 1.5)
+                            .background(Color.accentColor.opacity(0.18), in: Capsule())
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
                 Text("\(formatDuration(summary.duration))  ·  \(summary.created.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
             }

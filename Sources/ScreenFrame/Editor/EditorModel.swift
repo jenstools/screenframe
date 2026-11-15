@@ -54,7 +54,7 @@ final class EditorModel: ObservableObject {
     @Published var aiPrompt = ""
     @Published var aiStatus: String?
     // Busy states, all derived from the activity list (see Activities).
-    var aiBusy: Bool { isRunning("ai") || isRunning("short") }
+    var aiBusy: Bool { isRunning("ai") || isRunning("shorts") }
     @Published var analysisStatus: String?
     var privacyProgress: Double? { progress(of: "privacy") }
     var faceProgress: Double? { progress(of: "faces") }
@@ -140,8 +140,17 @@ final class EditorModel: ObservableObject {
 
     /// The preview's render models per clip, for mapping blur boxes onto the preview.
     var renderModels: [UUID: RenderModel] = [:]
-    /// Opens another project (used by "Make Short").
+    /// Opens another project (shorts, their original).
     var openProject: ((URL) -> Void)?
+    /// Closes another project's window if it's open (before a short is deleted).
+    var closeProject: ((URL) -> Void)?
+    /// The editor of another project, if its window is open.
+    var editorFor: ((URL) -> EditorModel?)?
+    /// Social tab: the shorts cut from this video.
+    @Published var shorts: [ShortEntry] = []
+    /// When this project is itself a short: where it came from and its post text.
+    @Published var shortInfo: ShortInfo?
+    var shortObserver: NSObjectProtocol?
     /// Transcribed words per audio file path, reused by captions, cleanup and AI.
     var wordsByFile: [String: [Captioner.Word]] = [:]
     @Published var selection: Selection?
@@ -149,6 +158,8 @@ final class EditorModel: ObservableObject {
     @Published private(set) var isPlaying = false
     var exportProgress: Double? { progress(of: "export") }
     @Published private(set) var lastExport: URL?
+    /// Every file the last export wrote (the final one first).
+    private var lastExportFiles: [URL] = []
     @Published var errorMessage: String?
     /// Audio file path → peaks.
     @Published private(set) var waveforms: [String: [Float]] = [:]
@@ -195,12 +206,14 @@ final class EditorModel: ObservableObject {
         rebuild(delay: false)
         loadWaveforms()
         analyzeFaces()
+        startSocial()
     }
 
     func teardown() {
         player.pause()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        if let shortObserver { NotificationCenter.default.removeObserver(shortObserver) }
         saveNow()
     }
 
@@ -931,17 +944,33 @@ final class EditorModel: ObservableObject {
         panel.allowedContentTypes = [.mpeg4Movie]
         panel.nameFieldStringValue = "\(name).mp4"
         panel.directoryURL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
-        guard panel.runModal() == .OK, let url = panel.url else { return }
         saveNow()
         let project = self.project
-        guard begin("export", "Exporting “\(url.lastPathComponent)”…") else { return }
+        // With a camera: also write "<name> - Screen.mp4" and "<name> - Camera.mp4", in sync with the edit.
+        var partsBox: NSButton?
+        if project.hasCamera {
+            let box = NSButton(checkboxWithTitle: "Also export screen and camera as separate files", target: nil, action: nil)
+            box.state = (UserDefaults.standard.object(forKey: Self.exportPartsKey) as? Bool ?? true) ? .on : .off
+            box.sizeToFit()
+            let accessory = NSView(frame: NSRect(x: 0, y: 0, width: box.frame.width + 40, height: box.frame.height + 16))
+            box.setFrameOrigin(NSPoint(x: 20, y: 8))
+            accessory.addSubview(box)
+            panel.accessoryView = accessory
+            partsBox = box
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let parts = partsBox.map { $0.state == .on } ?? false
+        if let partsBox { UserDefaults.standard.set(partsBox.state == .on, forKey: Self.exportPartsKey) }
+        let count = Exporter.variants(for: project, parts: parts).count
+        guard begin("export", count > 1 ? "Exporting “\(url.lastPathComponent)” + screen + camera…"
+                                        : "Exporting “\(url.lastPathComponent)”…") else { return }
         Task {
             do {
-                try await Exporter.export(project: project, to: url) { [weak self] p in
+                lastExportFiles = try await Exporter.exportAll(project: project, to: url, parts: parts) { [weak self] p in
                     Task { @MainActor in self?.report("export", progress: p) }
                 }
                 lastExport = url
-                end("export", "Exported \(url.lastPathComponent)")
+                end("export", count > 1 ? "Exported \(url.lastPathComponent) + screen + camera" : "Exported \(url.lastPathComponent)")
             } catch {
                 end("export")
                 errorMessage = "Export failed: \(error.localizedDescription)"
@@ -949,9 +978,11 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    static let exportPartsKey = "exportSeparateParts"
+
     func revealExport() {
         guard let lastExport else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([lastExport])
+        NSWorkspace.shared.activateFileViewerSelecting(lastExportFiles.isEmpty ? [lastExport] : lastExportFiles)
     }
 
     /// Puts the exported file on the clipboard, ready to paste into Slack, LinkedIn, Mail…
